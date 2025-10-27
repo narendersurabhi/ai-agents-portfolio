@@ -2,11 +2,12 @@ version: 0.2
 env:
   variables:
     IMAGE_REPO: ai-agents-portfolio
+
 phases:
-pre_build:
+  pre_build:
     commands:
       - |
-        set -eu
+        set -euo pipefail
         echo "Resolving AWS account and region"
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-us-east-2}}"
@@ -16,15 +17,20 @@ pre_build:
           aws ecr create-repository --repository-name "$IMAGE_REPO" --image-scanning-configuration scanOnPush=true
         fi
         aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
-build:
+        echo "export ECR_URI=$ECR_URI" >> "$BASH_ENV"
+
+  build:
     commands:
       - docker build -t "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" -f docker/Dockerfile .
       - docker tag "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" "$ECR_URI:latest"
-post_build:
+
+  post_build:
     commands:
-      docker push "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION"
-      docker push "$ECR_URI:latest"
-      printf '{"imageUri":"%s"}' "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" > image.json
+      - docker push "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION"
+      - docker push "$ECR_URI:latest"
+      - printf '{"imageUri":"%s"}' "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" > image.json
+
 artifacts:
   files:
     - image.json
+
