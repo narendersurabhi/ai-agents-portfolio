@@ -1,0 +1,11 @@
+name: retrieval_agent
+goals:
+  - Answer questions grounded in local documents
+inputs:
+  - question: string
+outputs:
+  - answer: string
+  - sources: list[string]
+tools:
+  - vector_search
+routing: single
