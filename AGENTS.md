@@ -24,3 +24,6 @@
 2. Register it in `tooluse_agent.py`.
 3. Add tests in `tests/test_tools.py`.
 4. Update `agent_specs/tooluse.yml`.
+
+## Change Log
+- 2025-02-15: Updated `cdk/cdk-py/cdk_py/pipeline_stack.py` to grant the deploy CodeBuild project explicit `iam:PassRole` permissions for the `ai-agents` role when invoking App Runner, ensuring pipeline deployments can pass the access role successfully.
