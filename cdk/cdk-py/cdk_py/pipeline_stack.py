@@ -77,11 +77,18 @@ class PipelineStack(Stack):
             resources=["*"]
         ))
 
+        deploy_project.add_to_role_policy(iam.PolicyStatement(
+            actions=["iam:CreateServiceLinkedRole"],
+            resources=["*"],
+            conditions={"StringEquals": {"iam:AWSServiceName": "apprunner.amazonaws.com"}}
+        ))
+
         deploy = actions.CodeBuildAction(
             action_name="Deploy",
             input=build_out,
             project=deploy_project
         )
+
 
         pipeline = codepipeline.Pipeline(
             self, "AiAgentsPortfolio",
