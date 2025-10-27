@@ -92,6 +92,21 @@ class PipelineStack(Stack):
             ]}}
         ))
 
+        deploy_project.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["iam:PassRole"],
+                resources=[f"arn:aws:iam::{Aws.ACCOUNT_ID}:role/ai-agents"],
+                conditions={
+                    "StringEquals": {
+                        "iam:PassedToService": [
+                            "apprunner.amazonaws.com",
+                            "build.apprunner.amazonaws.com",
+                        ]
+                    }
+                },
+            )
+        )
+
         # Proactively ensure the App Runner service-linked role exists to avoid
         # requiring CreateServiceLinkedRole at deploy time.
         iam.CfnServiceLinkedRole(self, "AppRunnerSLR", aws_service_name="apprunner.amazonaws.com")
