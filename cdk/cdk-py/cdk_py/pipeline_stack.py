@@ -77,11 +77,20 @@ class PipelineStack(Stack):
             resources=["*"]
         ))
 
+        # Allow creation of the App Runner service-linked role on first use.
+        # Some regions/accounts report different service names, so allow both.
         deploy_project.add_to_role_policy(iam.PolicyStatement(
             actions=["iam:CreateServiceLinkedRole"],
             resources=["*"],
-            conditions={"StringEquals": {"iam:AWSServiceName": "apprunner.amazonaws.com"}}
+            conditions={"StringEquals": {"iam:AWSServiceName": [
+                "apprunner.amazonaws.com",
+                "build.apprunner.amazonaws.com"
+            ]}}
         ))
+
+        # Proactively ensure the App Runner service-linked role exists to avoid
+        # requiring CreateServiceLinkedRole at deploy time.
+        iam.CfnServiceLinkedRole(self, "AppRunnerSLR", aws_service_name="apprunner.amazonaws.com")
 
         deploy = actions.CodeBuildAction(
             action_name="Deploy",
