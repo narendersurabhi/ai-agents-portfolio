@@ -1,3 +1,7 @@
+![CI](https://github.com/<you>/ai-agents-portfolio/actions/workflows/ci.yml/badge.svg)
+![Deploy](https://github.com/<you>/ai-agents-portfolio/actions/workflows/deploy.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.11-blue)
+
 # AI Agents Portfolio
 
 Production-grade demos of three agent types:

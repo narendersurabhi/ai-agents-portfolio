@@ -1,0 +1,23 @@
+version: 0.2
+env:
+  variables:
+    IMAGE_REPO: ai-agents-portfolio
+phases:
+  pre_build:
+    commands:
+      aws --version
+      ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      REGION=$(aws configure get region)
+      ECR_URI=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$IMAGE_REPO
+      aws ecr describe-repositories --repository-names $IMAGE_REPO || \
+        aws ecr create-repository --repository-name $IMAGE_REPO --image-scanning-configuration scanOnPush=true
+      aws ecr get-login-password | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+  build:
+    commands:
+      docker build -t $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION -f docker/Dockerfile .
+  post_build:
+    commands:
+      docker push $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION
+      printf '{"imageUri":"%s"}' "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" > image.json
+artifacts:
+  files: [image.json]
