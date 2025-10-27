@@ -1,0 +1,3 @@
+- Use feature branches and PRs.
+- Add tests for new tools and routes.
+- Keep agents pure and deterministic where possible.
