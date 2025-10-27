@@ -1,7 +1,7 @@
 from aws_cdk import (
     Stack, CfnParameter, Duration, aws_codepipeline as codepipeline,
     aws_codepipeline_actions as actions, aws_codebuild as codebuild,
-    aws_iam as iam, #aws_sns as sns, aws_codestarnotifications as notif,
+    aws_iam as iam, Aws, #aws_sns as sns, aws_codestarnotifications as notif,
 )
 from aws_cdk import aws_sns as sns, aws_events as events, aws_events_targets as targets
 from constructs import Construct
@@ -51,34 +51,21 @@ class PipelineStack(Stack):
             project=build_project
         )
 
-        # IAM role for App Runner to pull private ECR images
-        ecr_access_role = iam.Role(
-            self,
-            "AppRunnerEcrAccessRole",
-            assumed_by=iam.ServicePrincipal("build.apprunner.amazonaws.com"),
-            description="Role that App Runner uses to pull from private ECR",
-        )
-        ecr_access_role.add_to_policy(iam.PolicyStatement(
-            actions=[
-                "ecr:GetAuthorizationToken",
-                "ecr:BatchCheckLayerAvailability",
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:BatchGetImage",
-            ],
-            resources=["*"]
-        ))
+        # Use an existing IAM role for App Runner ECR access (e.g., 'ai-agents').
+        # Ensure that role trusts 'build.apprunner.amazonaws.com' and has ECR read permissions.
 
         # Deploy (App Runner create/update)
         deploy_project = codebuild.PipelineProject(
             self, "Deploy",
             build_spec=codebuild.BuildSpec.from_object({
                 "version": "0.2",
-                "env": {"variables": {"ACCESS_ROLE_ARN": ecr_access_role.role_arn}},
                 "phases": {
                     "build": {"commands": [
                         "IMAGE=$(jq -r .imageUri image.json)",
                         "SVC=$(aws apprunner list-services --query \"ServiceSummaryList[?ServiceName=='ai-agents-portfolio'].ServiceArn\" --output text)",
                         "aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com || true",
+                        # Prefer provided ACCESS_ROLE_ARN; else default to role name 'ai-agents' in this account
+                        "ACCESS_ROLE_ARN=\"${ACCESS_ROLE_ARN:-arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/ai-agents}\"",
                         "SRC_CONFIG=$(jq -n --arg img \"$IMAGE\" --arg arn \"$ACCESS_ROLE_ARN\" '{ImageRepository:{ImageIdentifier:$img,ImageRepositoryType:\"ECR\",ImageConfiguration:{Port:\"8080\"}},AuthenticationConfiguration:{AccessRoleArn:$arn},AutoDeploymentsEnabled:true}')",
                         "if [ -z \"$SVC\" ]; then aws apprunner create-service --service-name ai-agents-portfolio --source-configuration \"$SRC_CONFIG\"; else aws apprunner update-service --service-arn \"$SVC\" --source-configuration \"$SRC_CONFIG\"; fi",
                         "aws apprunner describe-service --service-arn $(aws apprunner list-services --query \"ServiceSummaryList[?ServiceName=='ai-agents-portfolio'].ServiceArn\" --output text) --query Service.ServiceUrl --output text"
@@ -115,10 +102,10 @@ class PipelineStack(Stack):
             deploy_project.role.add_managed_policy(
                 iam.ManagedPolicy.from_aws_managed_policy_name("AWSAppRunnerFullAccess")
             )
-            # Allow passing the ECR access role to App Runner (cover both service values)
-            deploy_project.add_to_role_policy(iam.PolicyStatement(
+            # Allow passing the existing ECR access role (default name 'ai-agents') to App Runner
+            deploy_project.role.add_to_policy(iam.PolicyStatement(
                 actions=["iam:PassRole"],
-                resources=[ecr_access_role.role_arn],
+                resources=[f"arn:aws:iam::{Aws.ACCOUNT_ID}:role/ai-agents"],
                 conditions={"StringEquals": {"iam:PassedToService": [
                     "apprunner.amazonaws.com",
                     "build.apprunner.amazonaws.com"
