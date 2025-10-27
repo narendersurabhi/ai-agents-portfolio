@@ -115,11 +115,14 @@ class PipelineStack(Stack):
             deploy_project.role.add_managed_policy(
                 iam.ManagedPolicy.from_aws_managed_policy_name("AWSAppRunnerFullAccess")
             )
-            # Allow passing the ECR access role to App Runner
-            deploy_project.role.add_to_policy(iam.PolicyStatement(
+            # Allow passing the ECR access role to App Runner (cover both service values)
+            deploy_project.add_to_role_policy(iam.PolicyStatement(
                 actions=["iam:PassRole"],
                 resources=[ecr_access_role.role_arn],
-                conditions={"StringEquals": {"iam:PassedToService": "build.apprunner.amazonaws.com"}}
+                conditions={"StringEquals": {"iam:PassedToService": [
+                    "apprunner.amazonaws.com",
+                    "build.apprunner.amazonaws.com"
+                ]}}
             ))
 
         deploy = actions.CodeBuildAction(
