@@ -36,30 +36,8 @@ class PipelineStack(Stack):
         # Build (docker build + push; outputs image.json)
         build_project = codebuild.PipelineProject(
             self, "Build",
-            environment=codebuild.BuildEnvironment(
-                privileged=True
-            ),
-            build_spec=codebuild.BuildSpec.from_object({
-                "version": "0.2",
-                "env": {"variables": {"IMAGE_REPO": image_repo.value_as_string}},
-                "phases": {
-                    "pre_build": {"commands": [
-                        "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)",
-                        "REGION=$(aws configure get region)",
-                        "ECR_URI=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$IMAGE_REPO",
-                        'aws ecr describe-repositories --repository-names $IMAGE_REPO || aws ecr create-repository --repository-name $IMAGE_REPO --image-scanning-configuration scanOnPush=true',
-                        "aws ecr get-login-password | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
-                    ]},
-                    "build": {"commands": [
-                        "docker build -t $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION -f docker/Dockerfile ."
-                    ]},
-                    "post_build": {"commands": [
-                        "docker push $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION",
-                        'printf \'{"imageUri":"%s"}\' "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" > image.json'
-                    ]},
-                },
-                "artifacts": {"files": ["image.json"]},
-            })
+            environment=codebuild.BuildEnvironment(privileged=True),
+            build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
         )
         build_project.add_to_role_policy(iam.PolicyStatement(
             actions=["ecr:*","sts:GetCallerIdentity"],
@@ -75,9 +53,24 @@ class PipelineStack(Stack):
 
         # Deploy (App Runner create/update)
         deploy_project = codebuild.PipelineProject(
-            self, "Build",
-            environment=codebuild.BuildEnvironment(privileged=True),
-            build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
+            self, "Deploy",
+            build_spec=codebuild.BuildSpec.from_object({
+                "version": "0.2",
+                "phases": {
+                    "build": {"commands": [
+                        "IMAGE=$(cat image.json | jq -r .imageUri)",
+                        "SVC=$(aws apprunner list-services --query \"ServiceSummaryList[?ServiceName=='ai-agents-portfolio'].ServiceArn\" --output text)",
+                        "if [ -z \"$SVC\" ]; then \
+                           aws apprunner create-service --service-name ai-agents-portfolio --source-configuration '{\"ImageRepository\":{\"ImageIdentifier\":\"'\"$IMAGE\"'\",\"ImageRepositoryType\":\"ECR\",\"ImageConfiguration\":{\"Port\":\"8080\"}},\"AutoDeploymentsEnabled\":true}'; \
+                         else \
+                           aws apprunner update-service --service-arn \"$SVC\" --source-configuration '{\"ImageRepository\":{\"ImageIdentifier\":\"'\"$IMAGE\"'\",\"ImageRepositoryType\":\"ECR\",\"ImageConfiguration\":{\"Port\":\"8080\"}}}'; \
+                         fi",
+                        "aws apprunner describe-service --service-arn $(aws apprunner list-services --query \"ServiceSummaryList[?ServiceName=='ai-agents-portfolio'].ServiceArn\" --output text) --query Service.ServiceUrl --output text"
+                    ]}
+                },
+                "artifacts": {"files": ["image.json"]}
+            }),
+            timeout=Duration.minutes(15)
         )
         deploy_project.add_to_role_policy(iam.PolicyStatement(
             actions=["apprunner:*"],
