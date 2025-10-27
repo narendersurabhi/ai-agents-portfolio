@@ -5,13 +5,12 @@ env:
 phases:
   pre_build:
     commands:
-      aws --version
       ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-      REGION=$(aws configure get region)
+      REGION=${AWS_DEFAULT_REGION:-$AWS_REGION}
       ECR_URI=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$IMAGE_REPO
       aws ecr describe-repositories --repository-names $IMAGE_REPO || \
         aws ecr create-repository --repository-name $IMAGE_REPO --image-scanning-configuration scanOnPush=true
-      aws ecr get-login-password | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+      aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
   build:
     commands:
       docker build -t $ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION -f docker/Dockerfile .
