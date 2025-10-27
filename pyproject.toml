@@ -1,0 +1,11 @@
+[project]
+name = "ai-agents-portfolio"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi", "uvicorn", "pydantic>=2", "httpx", "faiss-cpu; platform_system!='Windows'",
+  "pytest", "rich", "python-dotenv", "ruff", "pyproject-fmt"
+]
+
+[tool.ruff]
+line-length = 100
