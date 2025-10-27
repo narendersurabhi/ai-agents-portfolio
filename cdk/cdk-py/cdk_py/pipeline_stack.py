@@ -75,24 +75,9 @@ class PipelineStack(Stack):
 
         # Deploy (App Runner create/update)
         deploy_project = codebuild.PipelineProject(
-            self, "Deploy",
-            build_spec=codebuild.BuildSpec.from_object({
-                "version": "0.2",
-                "phases": {
-                    "build": {"commands": [
-                        "IMAGE=$(cat image.json | jq -r .imageUri)",
-                        "SVC=$(aws apprunner list-services --query \"ServiceSummaryList[?ServiceName=='ai-agents-portfolio'].ServiceArn\" --output text)",
-                        "if [ -z \"$SVC\" ]; then \
-                           aws apprunner create-service --service-name ai-agents-portfolio --source-configuration '{\"ImageRepository\":{\"ImageIdentifier\":\"'\"$IMAGE\"'\",\"ImageRepositoryType\":\"ECR\",\"ImageConfiguration\":{\"Port\":\"8080\"}},\"AutoDeploymentsEnabled\":true}'; \
-                         else \
-                           aws apprunner update-service --service-arn \"$SVC\" --source-configuration '{\"ImageRepository\":{\"ImageIdentifier\":\"'\"$IMAGE\"'\",\"ImageRepositoryType\":\"ECR\",\"ImageConfiguration\":{\"Port\":\"8080\"}}}'; \
-                         fi",
-                        "aws apprunner describe-service --service-arn $(aws apprunner list-services --query \"ServiceSummaryList[?ServiceName=='ai-agents-portfolio'].ServiceArn\" --output text) --query Service.ServiceUrl --output text"
-                    ]}
-                },
-                "artifacts": {"files": ["image.json"]}
-            }),
-            timeout=Duration.minutes(15)
+            self, "Build",
+            environment=codebuild.BuildEnvironment(privileged=True),
+            build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
         )
         deploy_project.add_to_role_policy(iam.PolicyStatement(
             actions=["apprunner:*"],
