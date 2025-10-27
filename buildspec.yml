@@ -3,10 +3,10 @@ env:
   variables:
     IMAGE_REPO: ai-agents-portfolio
 phases:
-  pre_build:
+pre_build:
     commands:
       - |
-        set -euo pipefail
+        set -eu
         echo "Resolving AWS account and region"
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         REGION="${AWS_DEFAULT_REGION:-${AWS_REGION:-us-east-2}}"
@@ -15,7 +15,7 @@ phases:
         if ! aws ecr describe-repositories --repository-names "$IMAGE_REPO" >/dev/null 2>&1; then
           aws ecr create-repository --repository-name "$IMAGE_REPO" --image-scanning-configuration scanOnPush=true
         fi
-        aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"        
+        aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
   build:
     commands:
       docker build -t "$ECR_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION" -f docker/Dockerfile .
