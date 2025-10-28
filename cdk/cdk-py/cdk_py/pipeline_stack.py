@@ -60,18 +60,8 @@ class PipelineStack(Stack):
         cb_role.add_to_principal_policy(iam.PolicyStatement(
             actions=["iam:PassRole"],
             resources=[ecr_access_role.role_arn],
-            conditions={"StringEquals": {
-                "iam:PassedToService": ["apprunner.amazonaws.com", "build.apprunner.amazonaws.com"]
-            }},
-        ))
-
-
-        cb_role.add_to_principal_policy(iam.PolicyStatement(
-            actions=["iam:PassRole"],
-            resources=[ecr_access_role.role_arn],
-            conditions={"StringEquals": {
-                "iam:PassedToService": ["apprunner.amazonaws.com","build.apprunner.amazonaws.com"]
-            }},
+            conditions={"StringEquals":{
+                "iam:PassedToService":["apprunner.amazonaws.com","build.apprunner.amazonaws.com"]}}
         ))
 
         # ----- Build (docker build + push; emits image.json) -----
@@ -125,7 +115,7 @@ class PipelineStack(Stack):
                             'aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com || true',
                             # resolve default access role if not provided by action env var
                             'ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
-                            'ACCESS_ROLE_ARN="${ACCESS_ROLE_ARN:-arn:aws:iam::${ACCOUNT_ID}:role/ai-agents}"',
+                            ': "${ACCESS_ROLE_ARN:?missing ACCESS_ROLE_ARN}"',
                             # build SourceConfiguration JSON safely
                             'SRC_CONFIG=$(python -c "import json,os; '
                             'print(json.dumps({'
@@ -159,11 +149,10 @@ class PipelineStack(Stack):
             input=build_out,
             project=deploy_project,
             environment_variables={
-                # pass the ECR access role explicitly
                 "ACCESS_ROLE_ARN": codebuild.BuildEnvironmentVariable(
-                    value=f"arn:aws:iam::{Aws.ACCOUNT_ID}:role/ai-agents"
+                    value=ecr_access_role.role_arn   # NOT role/ai-agents
                 )
-            }
+            },
         )
 
         # ----- Pipeline -----
