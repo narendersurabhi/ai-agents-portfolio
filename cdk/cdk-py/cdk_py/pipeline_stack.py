@@ -44,13 +44,34 @@ class PipelineStack(Stack):
             f"arn:aws:iam::{Aws.ACCOUNT_ID}:role/ai-agents",
             mutable=True,
         )
-        # Allow this role to PassRole itself to App Runner (image builder + service)
+
+        # inside __init__ after cb_role is defined
+        ecr_access_role = iam.Role(
+            self, "AppRunnerEcrAccessRole",
+            assumed_by=iam.ServicePrincipal("build.apprunner.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "service-role/AWSAppRunnerServicePolicyForECRAccess"
+                )
+            ],
+        )
+
+        # CodeBuild service role may pass this role to App Runner
         cb_role.add_to_principal_policy(iam.PolicyStatement(
             actions=["iam:PassRole"],
-            resources=[f"arn:aws:iam::{Aws.ACCOUNT_ID}:role/ai-agents"],
-            conditions={"StringEquals": {"iam:PassedToService": [
-                "apprunner.amazonaws.com", "build.apprunner.amazonaws.com"
-            ]}},
+            resources=[ecr_access_role.role_arn],
+            conditions={"StringEquals": {
+                "iam:PassedToService": ["apprunner.amazonaws.com", "build.apprunner.amazonaws.com"]
+            }},
+        ))
+
+
+        cb_role.add_to_principal_policy(iam.PolicyStatement(
+            actions=["iam:PassRole"],
+            resources=[ecr_access_role.role_arn],
+            conditions={"StringEquals": {
+                "iam:PassedToService": ["apprunner.amazonaws.com","build.apprunner.amazonaws.com"]
+            }},
         ))
 
         # ----- Build (docker build + push; emits image.json) -----
@@ -82,6 +103,12 @@ class PipelineStack(Stack):
             self, "Deploy",
             role=cb_role,
             environment=codebuild.BuildEnvironment(privileged=False),
+            environment_variables={
+                "ACCESS_ROLE_ARN": codebuild.BuildEnvironmentVariable(
+                    value=ecr_access_role.role_arn
+                )
+            },
+
             build_spec=codebuild.BuildSpec.from_object({
                 "version": "0.2",
                 "phases": {
