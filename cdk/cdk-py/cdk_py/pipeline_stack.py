@@ -112,7 +112,7 @@ class PipelineStack(Stack):
                             # get existing service arn if any
                             'SVC=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName==\'ai-agents-portfolio\'].ServiceArn" --output text)',
                             # ensure App Runner SLR exists (first use only)
-                            'aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com || true',
+                            # 'aws iam create-service-linked-role --aws-service-name apprunner.amazonaws.com || true',
                             # resolve default access role if not provided by action env var
                             'ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)',
                             ': "${ACCESS_ROLE_ARN:?missing ACCESS_ROLE_ARN}"',
