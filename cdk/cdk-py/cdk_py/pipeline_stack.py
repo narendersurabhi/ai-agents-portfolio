@@ -37,8 +37,8 @@ class PipelineStack(Stack):
             code_build_clone_output=True,
             trigger_on_push=True,
         )
-
-        # inside __init__ after cb_role is defined
+        # ----- IAM Roles -----
+        # role for App Runner to access ECR images  
         ecr_access_role = iam.Role(
             self, "AppRunnerEcrAccessRole",
             assumed_by=iam.ServicePrincipal("build.apprunner.amazonaws.com"),
@@ -48,20 +48,20 @@ class PipelineStack(Stack):
                 )
             ],
         )
-
+        # role for CodeBuild projects in pipeline   
         codebuild_role = iam.Role(
             self, "CodeBuildPipelineRole",
             assumed_by=iam.ServicePrincipal("codebuild.amazonaws.com"),
         )
 
-        # inline perms for build stage (push image to ECR)
+        # perms for build stage (ECR push)
         codebuild_role.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name(
                 "AmazonEC2ContainerRegistryPowerUser"  # covers push/pull/create repo
             )
         )
 
-        # perms for deploy stage (App Runner update)
+        # perms for deploy stage (App Runner create/update)
         codebuild_role.add_to_policy(iam.PolicyStatement(
             actions=[
                 "apprunner:ListServices",
@@ -72,7 +72,7 @@ class PipelineStack(Stack):
             resources=["*"],
         ))
 
-        # allow this CodeBuild role to pass ONLY the App Runner ECR access role
+        # allow CodeBuild to pass the ECR access role to App Runner
         codebuild_role.add_to_policy(iam.PolicyStatement(
             actions=["iam:PassRole"],
             resources=[ecr_access_role.role_arn],
@@ -86,7 +86,7 @@ class PipelineStack(Stack):
             },
         ))
 
-        # first-run safety for service-linked role
+        # allow CodeBuild to create App Runner service-linked role if needed
         codebuild_role.add_to_policy(iam.PolicyStatement(
             actions=["iam:CreateServiceLinkedRole"],
             resources=["*"],
@@ -105,8 +105,6 @@ class PipelineStack(Stack):
             environment=codebuild.BuildEnvironment(privileged=True),
             build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
         )
-
-
         
         build = actions.CodeBuildAction(
             action_name="BuildAndPush",
