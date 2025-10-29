@@ -38,13 +38,6 @@ class PipelineStack(Stack):
             trigger_on_push=True,
         )
 
-        # ----- Use a single IAM role for CodeBuild (mutable so CDK can add inline policy) -----
-        cb_role = iam.Role.from_role_arn(
-            self, "AiAgentsRole",
-            f"arn:aws:iam::{Aws.ACCOUNT_ID}:role/ai-agents",
-            mutable=True,
-        )
-
         # inside __init__ after cb_role is defined
         ecr_access_role = iam.Role(
             self, "AppRunnerEcrAccessRole",
@@ -56,27 +49,65 @@ class PipelineStack(Stack):
             ],
         )
 
-        # CodeBuild service role may pass this role to App Runner
-        cb_role.add_to_principal_policy(iam.PolicyStatement(
+        codebuild_role = iam.Role(
+            self, "CodeBuildPipelineRole",
+            assumed_by=iam.ServicePrincipal("codebuild.amazonaws.com"),
+        )
+
+        # inline perms for build stage (push image to ECR)
+        codebuild_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "AmazonEC2ContainerRegistryPowerUser"  # covers push/pull/create repo
+            )
+        )
+
+        # perms for deploy stage (App Runner update)
+        codebuild_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "apprunner:ListServices",
+                "apprunner:CreateService",
+                "apprunner:UpdateService",
+                "apprunner:DescribeService",
+            ],
+            resources=["*"],
+        ))
+
+        # allow this CodeBuild role to pass ONLY the App Runner ECR access role
+        codebuild_role.add_to_policy(iam.PolicyStatement(
             actions=["iam:PassRole"],
             resources=[ecr_access_role.role_arn],
-            conditions={"StringEquals":{
-                "iam:PassedToService":["apprunner.amazonaws.com","build.apprunner.amazonaws.com"]}}
+            conditions={
+                "StringEquals": {
+                    "iam:PassedToService": [
+                        "apprunner.amazonaws.com",
+                        "build.apprunner.amazonaws.com",
+                    ]
+                }
+            },
         ))
+
+        # first-run safety for service-linked role
+        codebuild_role.add_to_policy(iam.PolicyStatement(
+            actions=["iam:CreateServiceLinkedRole"],
+            resources=["*"],
+            conditions={
+                "StringEquals": {
+                    "iam:AWSServiceName": "apprunner.amazonaws.com"
+                }
+            },
+        ))
+
 
         # ----- Build (docker build + push; emits image.json) -----
         build_project = codebuild.PipelineProject(
             self, "Build",
-            role=cb_role,
+            role=codebuild_role,
             environment=codebuild.BuildEnvironment(privileged=True),
             build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
         )
-        # Minimal extras needed by buildspec
-        build_project.add_to_role_policy(iam.PolicyStatement(
-            actions=["ecr:*", "sts:GetCallerIdentity"],
-            resources=["*"],
-        ))
 
+
+        
         build = actions.CodeBuildAction(
             action_name="BuildAndPush",
             input=source_out,
@@ -91,14 +122,13 @@ class PipelineStack(Stack):
         # ----- Deploy (App Runner create/update from ECR image) -----
         deploy_project = codebuild.PipelineProject(
             self, "Deploy",
-            role=cb_role,
+            role=codebuild_role,
             environment=codebuild.BuildEnvironment(privileged=False),
             environment_variables={
                 "ACCESS_ROLE_ARN": codebuild.BuildEnvironmentVariable(
                     value=ecr_access_role.role_arn
-                )
-            },
-
+                    )
+                    },
             build_spec=codebuild.BuildSpec.from_object({
                 "version": "0.2",
                 "phases": {
