@@ -85,17 +85,11 @@ class PipelineStack(Stack):
         ))
 
         # allow CodeBuild to pass the ECR access role to App Runner
+        # Remove service-conditional to avoid mismatches in iam:PassedToService
+        # context; still restricted to the exact access role resource.
         codebuild_role.add_to_policy(iam.PolicyStatement(
             actions=["iam:PassRole"],
             resources=[ecr_access_role.role_arn],
-            conditions={
-                "StringEquals": {
-                    "iam:PassedToService": [
-                        "apprunner.amazonaws.com",
-                        "build.apprunner.amazonaws.com",
-                    ]
-                }
-            },
         ))
 
         # allow CodeBuild to create App Runner service-linked role if needed
