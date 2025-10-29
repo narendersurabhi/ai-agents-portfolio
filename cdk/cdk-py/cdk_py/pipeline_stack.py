@@ -54,12 +54,17 @@ class PipelineStack(Stack):
             assumed_by=iam.ServicePrincipal("codebuild.amazonaws.com"),
         )
 
-        # basic CodeBuild perms (logs, artifacts, etc)
-        codebuild_role.add_managed_policy(
-            iam.ManagedPolicy.from_aws_managed_policy_name(
-                "service-role/AWSCodeBuildServiceRole"
-            )
-        )
+        # basic CodeBuild perms: CloudWatch Logs (create/write)
+        # Note: The former AWS managed policy "service-role/AWSCodeBuildServiceRole"
+        # is not attachable in this account; grant equivalent minimal perms inline.
+        codebuild_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+            ],
+            resources=["*"],
+        ))
 
         # perms for build stage (ECR push)
         codebuild_role.add_managed_policy(
@@ -199,6 +204,10 @@ class PipelineStack(Stack):
                 codepipeline.StageProps(stage_name="Deploy", actions=[deploy]),
             ],
         )
+
+        # Allow CodeBuild projects to read/write pipeline artifacts in S3
+        # (equivalent to the S3 access provided by the old managed policy)
+        pipeline.artifact_bucket.grant_read_write(codebuild_role)
 
         # ----- Notifications (EventBridge -> SNS) -----
         topic = sns.Topic(self, "PipelineTopic")
