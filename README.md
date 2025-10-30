@@ -102,13 +102,15 @@ flowchart TD
     subgraph Feedback Flow
         FeedbackRoute[[app/routes/feedback.py]] --> FeedbackRepo[[app.deps.FeedbackRepository]]
         FeedbackRepo -->|put| Dynamo[(DynamoDB Table or in-memory buffer)]
-        FeedbackRepo --> FeedbackResponse{{"ok": true}}
+        FeedbackRepo --> FeedbackResponse{{Feedback ACK JSON}}
     end
 
     ScoreResponse -->|HTTP 200/400| Client
     Explanation -->|HTTP 200/400| Client
     FeedbackResponse -->|HTTP 200| Client
 ```
+
+The feedback acknowledgment payload is a minimal JSON body of `{"ok": true}`.
 
 **Key behaviors**
 
