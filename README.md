@@ -82,59 +82,60 @@ Every request enters the FastAPI stack in [`app/main.py`](app/main.py), which wr
 
 ```mermaid
 flowchart TD
-    Client((Client)) -->|POST /score| Middleware[[app.main: observability_middleware]]
-    Client -->|POST /explain| Middleware
-    Client -->|POST /feedback| Middleware
-    Middleware --> Router{FastAPI router dispatch}
+  Client((Client)) -->|POST /score| Middleware[["app.main: observability_middleware"]]
+  Client -->|POST /explain| Middleware
+  Client -->|POST /feedback| Middleware
+  Middleware --> Router{FastAPI router dispatch}
 
-    Router --> ScoreRoute[[app/routes/score.py]]
-    Router --> ExplainRoute[[app/routes/explain.py]]
-    Router --> FeedbackRoute[[app/routes/feedback.py]]
+  Router --> ScoreRoute[["app/routes/score.py"]]
+  Router --> ExplainRoute[["app/routes/explain.py"]]
+  Router --> FeedbackRoute[["app/routes/feedback.py"]]
 
-    subgraph Score Flow
-        ScoreRoute -->|jsonschema.validate| ClaimSchema[[schemas/claim.json]]
-        ClaimSchema --> GuardScore[[GuardChain (PII -> Prompt Injection -> Relevance)]]
-        GuardScore -->|handoff| ScoreHandoff{{handoff: true}}
-        ScoreHandoff --> Publisher[(HandoffPublisher → SNS)]
-        GuardScore -->|sanitized claim| ScoreManager[[ManagerAgent (score flow)]]
-        ScoreManager --> Tools[[rules_eval\nfeature_stats\nprovider_history]]
-        Tools --> ScoreManager
-        ScoreManager --> Triage[[Triage Agent (configs/agents/triage.agent.yaml)]]
-        Triage -->|responses.create| OpenAI[(OpenAI Responses API)]
-        Triage --> TriageSchema[[schemas/triage_result.json]]
-        TriageSchema --> HitlScore{{HITL threshold & action checks}}
-        HitlScore --> ScoreEnvelope[[HTTP envelope {handoff, result, reason?}]]
-        ScoreEnvelope --> Publisher
-    end
+  subgraph "Score Flow"
+    ScoreRoute -->|jsonschema.validate| ClaimSchema[["schemas/claim.json"]]
+    ClaimSchema --> GuardScore[["GuardChain: PII &rarr; Prompt Injection &rarr; Relevance"]]
+    GuardScore -->|handoff| ScoreHandoff{handoff: true}
+    ScoreHandoff --> Publisher[("HandoffPublisher &rarr; SNS")]
+    GuardScore -->|sanitized claim| ScoreManager[["ManagerAgent (score flow)"]]
+    ScoreManager --> Tools[["rules_eval<br/>feature_stats<br/>provider_history"]]
+    Tools --> ScoreManager
+    ScoreManager --> Triage[["Triage Agent (configs/agents/triage.agent.yaml)"]]
+    Triage -->|responses.create| OpenAI[("OpenAI Responses API")]
+    Triage --> TriageSchema[["schemas/triage_result.json"]]
+    TriageSchema --> HitlScore{HITL threshold &amp; action checks}
+    HitlScore --> ScoreEnvelope[["HTTP envelope {handoff, result, reason?}"]]
+    ScoreEnvelope --> Publisher
+  end
 
-    subgraph Explain Flow
-        ExplainRoute --> GuardExplain[[GuardChain (PII -> Prompt Injection -> Relevance)]]
-        GuardExplain -->|handoff| ExplainHandoff{{handoff: true}}
-        ExplainHandoff --> Publisher
-        GuardExplain --> ExplainManager[[ManagerAgent (explain flow)]]
-        ExplainManager --> Investigator[[Investigator Agent]]
-        Investigator -->|responses.create| OpenAI
-        Investigator --> Investigation[[Investigation JSON]]
-        ExplainManager --> Explainer[[Explainer Agent]]
-        Explainer -->|responses.create| OpenAI
-        Explainer --> RenderPDF[[agents.tools.render_pdf]]
-        RenderPDF --> Explainer
-        Explainer --> ExplanationSchema[[schemas/explanation.json]]
-        ExplanationSchema --> ExplainEnvelope[[HTTP envelope {handoff, result, investigation}]]
-        ExplainEnvelope --> Publisher
-    end
+  subgraph "Explain Flow"
+    ExplainRoute --> GuardExplain[["GuardChain: PII &rarr; Prompt Injection &rarr; Relevance"]]
+    GuardExplain -->|handoff| ExplainHandoff{handoff: true}
+    ExplainHandoff --> Publisher
+    GuardExplain --> ExplainManager[["ManagerAgent (explain flow)"]]
+    ExplainManager --> Investigator[["Investigator Agent"]]
+    Investigator -->|responses.create| OpenAI
+    Investigator --> Investigation[["Investigation JSON"]]
+    ExplainManager --> Explainer[["Explainer Agent"]]
+    Explainer -->|responses.create| OpenAI
+    Explainer --> RenderPDF[["agents.tools.render_pdf"]]
+    RenderPDF --> Explainer
+    Explainer --> ExplanationSchema[["schemas/explanation.json"]]
+    ExplanationSchema --> ExplainEnvelope[["HTTP envelope {handoff, result, investigation}"]]
+    ExplainEnvelope --> Publisher
+  end
 
-    subgraph Feedback Flow
-        FeedbackRoute --> FeedbackRepo[[FeedbackRepository]]
-        FeedbackRepo --> Storage[(DynamoDB table or in-memory buffer)]
-        FeedbackRoute -->|handoff flag| FeedbackHandoff{{handoff: true}}
-        FeedbackHandoff --> Publisher
-        FeedbackRepo --> FeedbackAck[[HTTP envelope {ok: true}]]
-    end
+  subgraph "Feedback Flow"
+    FeedbackRoute --> FeedbackRepo[["FeedbackRepository"]]
+    FeedbackRepo --> Storage[("DynamoDB table or in-memory buffer")]
+    FeedbackRoute -->|handoff flag| FeedbackHandoff{handoff: true}
+    FeedbackHandoff --> Publisher
+    FeedbackRepo --> FeedbackAck[["HTTP envelope {ok: true}"]]
+  end
 
-    ScoreEnvelope --> Client
-    ExplainEnvelope --> Client
-    FeedbackAck --> Client
+  ScoreEnvelope --> Client
+  ExplainEnvelope --> Client
+  FeedbackAck --> Client
+
 ```
 
 The feedback acknowledgment payload is a minimal JSON body of `{"ok": true}`.
