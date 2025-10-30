@@ -138,3 +138,4 @@ output_schema: schemas/explanation.json
 - Added GuardChain (PII redaction, prompt-injection, relevance) with manager-orchestrated flows for `/score` and `/explain`, envelope responses, and HITL escalations.
 - Implemented SNS-backed handoff publisher, feedback handoff propagation, numbered prompts with completion signals, and extended tests/evals for guard coverage.
 - Documented end-to-end request flow with guard chain, manager orchestration, and HITL handoff diagram in README.
+- Fixed README request-flow Mermaid diagram labels to render on GitHub without parse errors.

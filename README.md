@@ -93,10 +93,10 @@ flowchart TD
 
     subgraph Score Flow
         ScoreRoute -->|jsonschema.validate| ClaimSchema[[schemas/claim.json]]
-        ClaimSchema --> GuardScore[[GuardChain (PII → Prompt-Injection → Relevance)]]
+        ClaimSchema --> GuardScore[[GuardChain (PII -> Prompt Injection -> Relevance)]]
         GuardScore -->|handoff| ScoreHandoff{{handoff: true}}
         ScoreHandoff --> Publisher[(HandoffPublisher → SNS)]
-        GuardScore -->|sanitized claim| ScoreManager[[ManagerAgent.run("score")]]
+        GuardScore -->|sanitized claim| ScoreManager[[ManagerAgent (score flow)]]
         ScoreManager --> Tools[[rules_eval\nfeature_stats\nprovider_history]]
         Tools --> ScoreManager
         ScoreManager --> Triage[[Triage Agent (configs/agents/triage.agent.yaml)]]
@@ -108,10 +108,10 @@ flowchart TD
     end
 
     subgraph Explain Flow
-        ExplainRoute --> GuardExplain[[GuardChain (PII → Prompt-Injection → Relevance)]]
+        ExplainRoute --> GuardExplain[[GuardChain (PII -> Prompt Injection -> Relevance)]]
         GuardExplain -->|handoff| ExplainHandoff{{handoff: true}}
         ExplainHandoff --> Publisher
-        GuardExplain --> ExplainManager[[ManagerAgent.run("explain")]]
+        GuardExplain --> ExplainManager[[ManagerAgent (explain flow)]]
         ExplainManager --> Investigator[[Investigator Agent]]
         Investigator -->|responses.create| OpenAI
         Investigator --> Investigation[[Investigation JSON]]
