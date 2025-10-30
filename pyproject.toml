@@ -3,9 +3,26 @@ name = "ai-agents-portfolio"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi", "uvicorn", "pydantic>=2", "httpx", "faiss-cpu; platform_system!='Windows'",
-  "pytest", "rich", "python-dotenv", "ruff", "pyproject-fmt"
+  "fastapi",
+  "uvicorn",
+  "pydantic>=2",
+  "httpx",
+  "faiss-cpu; platform_system!='Windows'",
+  "pytest",
+  "rich",
+  "python-dotenv",
+  "ruff",
+  "pyproject-fmt",
+  "jsonschema",
+  "pyyaml",
+  "boto3",
+  "openai"
 ]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["cdk", "src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

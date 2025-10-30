@@ -1,0 +1,64 @@
+- name: upcoding_units
+  claim:
+    id: CLM-1001
+    member:
+      id: M-1
+      dob: "1985-01-01"
+      plan_id: PLAN-1
+    provider:
+      npi: "1234567890"
+      name: Ortho Clinic
+    dos: "2024-01-10"
+    place: office
+    amount: 2500.0
+    lines:
+      - cpt: "99213"
+        units: 12
+        charge: 1200.0
+        dx: [S82.001A]
+  expect_min_risk: 0.4
+  expect_handoff: true
+- name: impossible_combo
+  claim:
+    id: CLM-2002
+    member:
+      id: M-2
+      dob: "1970-07-04"
+      plan_id: PLAN-2
+    provider:
+      npi: "9988776655"
+      name: General Practice
+    dos: "2024-03-15"
+    place: office
+    amount: 980.0
+    lines:
+      - cpt: "99499"
+        units: 1
+        charge: 980.0
+        dx: [Z00.00]
+  expect_min_risk: 0.2
+  expect_handoff: true
+- name: high_freq_modifier
+  claim:
+    id: CLM-3003
+    member:
+      id: M-3
+      dob: "1992-11-21"
+      plan_id: PLAN-3
+    provider:
+      npi: "4455667788"
+      name: Rehab Center
+    dos: "2024-02-05"
+    place: outpatient
+    amount: 1800.0
+    lines:
+      - cpt: "97110"
+        units: 8
+        charge: 900.0
+        dx: [M54.5]
+      - cpt: "97530"
+        units: 6
+        charge: 900.0
+        dx: [M54.5]
+  expect_min_risk: 0.3
+  expect_handoff: true

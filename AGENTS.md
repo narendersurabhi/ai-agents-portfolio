@@ -100,3 +100,11 @@ Streaming endpoint exists at `/v1/agents/{agent}/chat` for long calls.
 - iam:PassRole must target only role/AppRunnerEcrAccessRole.
 - Require ACCESS_ROLE_ARN env; do not fallback to role/ai-agents.
 - Keep schemas strict and versioned.
+
+## Change log
+- Added observability middleware with structured JSON logs, rolling p95 latency, and token cost tracking plus streaming defaults for agent calls.
+- Scaffolded schema-first FastAPI runtime with `/score`, `/explain`, and `/feedback` routes using strict JSON schema enforcement.
+- Added agent registry, base runtime, and tool stubs alongside triage/investigator/explainer YAML configurations.
+- Introduced evaluation harness, unit tests, and README documentation covering the new APIs.
+- Added GuardChain (PII redaction, prompt-injection, relevance) with manager-orchestrated flows for `/score` and `/explain`, envelope responses, and HITL escalations.
+- Implemented SNS-backed handoff publisher, feedback handoff propagation, numbered prompts with completion signals, and extended tests/evals for guard coverage.
