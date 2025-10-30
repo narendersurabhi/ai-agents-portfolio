@@ -119,6 +119,7 @@ Tests and evals pass. Schemas enforced. README shows orchestration and HITL. No 
 ## Change log
 
 2025-10-30: v2 adds manager orchestration, guardrails, HITL, termination criteria, and safety evals.
+2025-05-07: Documented the FastAPI request flow in README with a mermaid diagram for reference.
 
 ```
 
