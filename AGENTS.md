@@ -1,108 +1,78 @@
-# AGENTS.md — Codex Agent Playbook
+# AGENTS.md — Agentic Framework v2 (Guardrails + Orchestration + HITL)
 
-Purpose: enable autonomous PRs that add or improve agentic AI features for healthcare FWA detection and resume tooling, with strict safety, tests, and CI/CD to AWS App Runner.
+Purpose: detect healthcare FWA with schema-first agents, observable flows, and explicit human-in-the-loop (HITL) handoffs.
 
 ## Repo map (authoritative)
 ```
-app/                  # FastAPI app (HTTP API, streaming)
+app/
   main.py
-  deps.py
+  deps.py                 # clients, guard chain, settings
   routes/
-    score.py          # /score (triage)
-    explain.py        # /explain (investigate+explain)
-    feedback.py       # /feedback
+    score.py             # /score  → manager(flow="score")
+    explain.py           # /explain → manager(flow="explain")
+    feedback.py          # /feedback
 agents/
-  base.py             # BaseAgent, Tool wiring, schema enforcement
-  registry.py         # YAML loader
-  tools.py            # tool handlers (S3, rules_eval, feature_stats, etc.)
+  base.py                # BaseAgent, schema enforcement, tool router
+  registry.py            # YAML loader
+  tools.py               # rules_eval, feature_stats, provider_history, search_policy, render_pdf, s3_get/s3_put
+  manager.py             # ManagerAgent.run(flow)
+  guards/
+    relevance.py
+    prompt_injection.py
+    pii_redactor.py
 configs/
   agents/
     triage.agent.yaml
     investigator.agent.yaml
     explainer.agent.yaml
-schemas/              # JSON Schema Draft 2020-12
+schemas/
   claim.json
   triage_result.json
   investigation.json
   explanation.json
+  feedback.json
 evals/
-  tasks.yaml          # eval scenarios
-  scorer.py           # scoring and report
+  tasks.yaml
+  scorer.py
 tests/
   test_schemas.py
   test_runtime.py
   test_agents.py
-docker/
-  Dockerfile
-buildspec.yml
-cdk/
-  cdk-py/             # CDK pipeline (CodePipeline → CodeBuild → App Runner)
-README.md
-AGENTS.md
+  test_guards.py
+  test_prompts_contract.py
 ```
+## Orchestration pattern
+Manager-orchestrated flows. Single entry. Explicit termination and handoff.
+- score: guards → tools → triage agent → validate → maybe HITL.
+- explain: guards → investigator agent → explainer agent (+ render_pdf) → validate → maybe HITL.
+Termination: each agent uses `completion_signal: "<END_OF_TASK>"` for tests only. Output is pure JSON.
 
-## Commands
-- Install: `pip install -r requirements.txt`
-- Dev API: `uvicorn app.main:app --reload --port 8080`
-- Tests: `pytest -q`
-- Evals: `python -m evals.scorer --tasks evals/tasks.yaml --out evals/report.csv`
-- Lint/format: `ruff check . && ruff format --check .`
+## Guardrails
+- relevance: reject off-scope inputs.
+- prompt_injection: detect jailbreak markers; deny or strip.
+- pii_redactor: mask phone, SSN, MRN in logs only.
+Wiring: `GuardChain([relevance, prompt_injection])` runs pre-LLM. `pii_redactor` wraps logger.
+On guard trip: HTTP 422 with `{reason, handoff:"human_review"}`. Optional SNS notify.
+
+## Human-in-the-loop (HITL)
+Env: `HITL_THRESHOLD` (default 0.6). If `risk_score >= threshold` or guard trips → `{handoff:"human_review"}`.
+`/feedback` accepts `{claim_id,label,notes,handoff}`. Store to DynamoDB if configured, else memory.
+Optional: `SNS_HANDOFF_TOPIC_ARN` to publish events.
 
 ## Agent contracts
-- Specs in `configs/agents/*.agent.yaml`.
-- Each must reference a JSON schema under `schemas/`.
-- Outputs must validate. On failure: HTTP 400 `schema_error`.
+YAML lives in `configs/agents/*.agent.yaml`. Reference JSON Schemas in `schemas/`. Use numbered, schema-first prompts.
 
-YAML example:
+Example `triage.agent.yaml`
 ```yaml
 name: triage
 model: gpt-5
+max_tool_calls: 4
+completion_signal: "<END_OF_TASK>"
 system_prompt: |
-  Score fraud risk 0..1; cite rules and peer deviations. Output triage_result schema.
+  1) Read the claim JSON.
+  2) Call tools: rules_eval → feature_stats → provider_history.
+  3) Output JSON that validates schemas/triage_result.json only.
+  4) If validation fails, emit {"schema_error":"<reason>"} and stop.
+  5) No PHI in output. Calibrate: 0–0.2 approve, 0.2–0.6 queue_review, 0.6–1.0 auto_deny unless contradicting evidence.
 tools: [rules_eval, feature_stats, provider_history]
 output_schema: schemas/triage_result.json
-```
-
-## Tools
-Pure functions in `agents/tools.py`. Allowed by default:
-- s3_get, s3_put
-- rules_eval, feature_stats, provider_history
-- search_policy, render_pdf
-
-## HTTP API
-- POST /score → claim.json → triage_result.json
-- POST /explain → {claim_id} → explanation.json
-- POST /feedback → {claim_id,label,notes} → {ok:true}
-Streaming endpoint exists at `/v1/agents/{agent}/chat` for long calls.
-
-## CI/CD invariants
-- Region: us-east-2
-- CodePipeline → CodeBuild → ECR → App Runner
-- Deploy uses role/AppRunnerEcrAccessRole. No self-pass of role/ai-agents.
-
-## Secrets
-- OPENAI_API_KEY, AWS_REGION at runtime.
-- No real PHI. Mask sensitive data in logs.
-
-## DoD (per PR)
-- Tests green. Schemas enforced. Evals non-degrading.
-- README/API examples updated if changed.
-- Least-privileged IAM only.
-
-## Task queue
-1) Implement /score (rules_eval + feature_stats + triage agent).
-2) Implement /explain (investigator → explainer, PDF to S3).
-3) Add evals: upcoding_units, impossible_combo, high_freq_modifier.
-4) Observability: structured logs, p95 latency, token cost.
-5) Cost controls: model choice, max tokens, streaming by default.
-
-## Known pitfalls
-- iam:PassRole must target only role/AppRunnerEcrAccessRole.
-- Require ACCESS_ROLE_ARN env; do not fallback to role/ai-agents.
-- Keep schemas strict and versioned.
-
-## Change log
-- Added observability middleware with structured JSON logs, rolling p95 latency, and token cost tracking plus streaming defaults for agent calls.
-- Scaffolded schema-first FastAPI runtime with `/score`, `/explain`, and `/feedback` routes using strict JSON schema enforcement.
-- Added agent registry, base runtime, and tool stubs alongside triage/investigator/explainer YAML configurations.
-- Introduced evaluation harness, unit tests, and README documentation covering the new APIs.
