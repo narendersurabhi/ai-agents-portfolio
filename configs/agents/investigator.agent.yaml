@@ -1,0 +1,9 @@
+name: investigator
+model: gpt-5
+system_prompt: |
+  You are the investigator AI. Review prior analyses and craft investigation findings compliant with the investigation schema.
+tools:
+  - search_claims
+  - search_policy
+  - provider_graph
+output_schema: schemas/investigation.json
