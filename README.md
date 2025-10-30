@@ -59,6 +59,18 @@ curl -s http://localhost:8080/feedback \
   -d '{"claim_id": "CLM-1", "label": "correct", "notes": "Matches policy."}'
 ```
 
+
+### Observability & Cost Controls
+
+The API emits structured JSON logs via `observability.log_event` with request metadata, p95 latency, and agent token usage summaries.
+The `observability.Metrics` singleton keeps a rolling window of the last 100 durations per route and aggregates prompt/completion token
+counts per agent to estimate dollar spend using the pricing table in `observability.MODEL_PRICING`.
+
+* Inspect structured logs while the server runs to monitor latency and schema enforcement outcomes.
+* Query the in-memory metrics snapshot (`observability.get_metrics().snapshot()`) for dashboards or health endpoints.
+* Responses are requested in streaming mode with a `max_output_tokens` cap (512 by default) to bound model cost while still providing
+schema-conformant JSON payloads.
+
 ### Evaluations
 
 Offline smoke tests for `/score` live at [`evals/tasks.yaml`](evals/tasks.yaml). Generate a CSV report:
