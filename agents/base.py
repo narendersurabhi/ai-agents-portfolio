@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Mapping
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 import jsonschema
 
@@ -20,6 +20,8 @@ class AgentDefinition:
     system_prompt: str
     tool_names: Iterable[str]
     schema: Mapping[str, Any]
+    completion_signal: Optional[str] = None
+    max_tool_calls: Optional[int] = None
 
 
 class BaseAgent:
@@ -159,6 +161,12 @@ class BaseAgent:
             **self._response_options(),
         )
         text, usage_payload = self._parse_response(response)
+        if self.definition.completion_signal and self.definition.completion_signal not in text:
+            log_event(
+                "agent.termination.signal_missing",
+                agent=self.name,
+                expected=self.definition.completion_signal,
+            )
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:

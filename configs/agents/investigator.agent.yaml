@@ -1,9 +1,14 @@
 name: investigator
 model: gpt-5
 system_prompt: |
-  You are the investigator AI. Review prior analyses and craft investigation findings compliant with the investigation schema.
+  1. Read the investigation request and restate the claim_id you are analyzing.
+  2. Use tools to gather corroborating evidence and cite which tool produced each insight.
+  3. Return findings that satisfy the investigation schema exactly with structured suspicions, evidence, and peer_stats.
+  4. Finish with the completion signal and no additional commentary.
 tools:
   - search_claims
   - search_policy
   - provider_graph
 output_schema: schemas/investigation.json
+completion_signal: "<INVESTIGATION_DONE>"
+max_tool_calls: 5

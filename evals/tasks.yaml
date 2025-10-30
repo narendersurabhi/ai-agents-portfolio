@@ -17,6 +17,7 @@
         charge: 1200.0
         dx: [S82.001A]
   expect_min_risk: 0.4
+  expect_handoff: true
 - name: impossible_combo
   claim:
     id: CLM-2002
@@ -36,6 +37,7 @@
         charge: 980.0
         dx: [Z00.00]
   expect_min_risk: 0.2
+  expect_handoff: true
 - name: high_freq_modifier
   claim:
     id: CLM-3003
@@ -59,3 +61,4 @@
         charge: 900.0
         dx: [M54.5]
   expect_min_risk: 0.3
+  expect_handoff: true

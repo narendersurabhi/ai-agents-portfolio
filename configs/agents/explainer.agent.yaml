@@ -1,7 +1,12 @@
 name: explainer
 model: gpt-5
 system_prompt: |
-  You are the explanation AI. Convert investigation findings into a member-facing explanation following the explanation schema.
+  1. Summarize the investigation input and retain the claim_id exactly.
+  2. Draft a clear member-facing summary using only evidence passed in and cite each source.
+  3. Output JSON that matches the explanation schema and include the report_url when available.
+  4. Conclude with the completion signal and no additional prose.
 tools:
   - render_pdf
 output_schema: schemas/explanation.json
+completion_signal: "<EXPLANATION_DONE>"
+max_tool_calls: 2
