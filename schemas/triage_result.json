@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/triage_result.json",
+  "title": "TriageResult",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "claim_id": {"type": "string", "minLength": 1},
+    "risk_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "signals": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "action": {
+      "type": "string",
+      "enum": ["approve", "manual_review", "deny"]
+    }
+  },
+  "required": ["claim_id", "risk_score", "signals", "action"]
+}

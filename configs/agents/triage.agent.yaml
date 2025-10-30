@@ -1,0 +1,14 @@
+name: triage
+model: gpt-5
+system_prompt: |
+  1. Read the JSON claim payload and confirm required fields: id, member, provider, lines.
+  2. Call tools only when their inputs are available and reference their outputs explicitly.
+  3. Produce a response that conforms exactly to the triage_result schema with no extra keys.
+  4. End the message with the completion signal on its own line.
+tools:
+  - rules_eval
+  - feature_stats
+  - provider_history
+output_schema: schemas/triage_result.json
+completion_signal: "<TRIAGE_DONE>"
+max_tool_calls: 4
