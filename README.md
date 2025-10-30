@@ -60,6 +60,63 @@ curl -s http://localhost:8080/feedback \
 ```
 
 
+### Request flow overview
+
+The FastAPI stack in [`app/main.py`](app/main.py) wires the observability middleware before delegating to the individual routers in [`app/routes/`](app/routes). Requests are validated against JSON Schemas, enriched with deterministic tooling, executed through schema-constrained OpenAI agents, and finally returned with any side effects (PDF rendering or feedback persistence) applied. The following diagram highlights how each endpoint is orchestrated end-to-end:
+
+```mermaid
+flowchart TD
+    subgraph HTTP Layer
+        Client((Client)) -->|POST /score| Observability
+        Client -->|POST /explain| Observability
+        Client -->|POST /feedback| Observability
+        Observability[[app.main: observability_middleware]] --> RouterSelection[[FastAPI router dispatch]]
+        RouterSelection --> ScoreRoute[[app/routes/score.py]]
+        RouterSelection --> ExplainRoute[[app/routes/explain.py]]
+        RouterSelection --> FeedbackRoute[[app/routes/feedback.py]]
+    end
+
+    subgraph Score Flow
+        ScoreRoute -->|validate| ClaimSchema[[schemas/claim.json]]
+        ScoreRoute -->|compose payload| ScoreTools[[rules_eval\nfeature_stats\nprovider_history]]
+        ScoreTools --> ScoreRoute
+        ScoreRoute -->|run triage agent| TriageAgent[[configs/agents/triage.agent.yaml]]
+        TriageAgent -->|responses.create| OpenAI[(OpenAI Responses API)]
+        TriageAgent -->|enforce| TriageSchema[[schemas/triage_result.json]]
+        TriageAgent --> ScoreResponse{{Triage result}}
+    end
+
+    subgraph Explain Flow
+        ExplainRoute -->|load investigator| Investigator[[configs/agents/investigator.agent.yaml]]
+        Investigator -->|responses.create| OpenAI
+        Investigator --> Investigation{{Investigation JSON}}
+        ExplainRoute --> Investigation
+        ExplainRoute -->|load explainer| Explainer[[configs/agents/explainer.agent.yaml]]
+        Explainer -->|responses.create| OpenAI
+        Explainer --> Explanation{{Explanation JSON}}
+        Explanation -->|attach report| RenderPDF[[agents.tools.render_pdf]]
+        RenderPDF --> Explanation
+        Explainer -->|enforce| ExplanationSchema[[schemas/explanation.json]]
+    end
+
+    subgraph Feedback Flow
+        FeedbackRoute[[app/routes/feedback.py]] --> FeedbackRepo[[app.deps.FeedbackRepository]]
+        FeedbackRepo -->|put| Dynamo[(DynamoDB Table or in-memory buffer)]
+        FeedbackRepo --> FeedbackResponse{{{"ok": true}}}
+    end
+
+    ScoreResponse -->|HTTP 200/400| Client
+    Explanation -->|HTTP 200/400| Client
+    FeedbackResponse -->|HTTP 200| Client
+```
+
+**Key behaviors**
+
+* **Schema enforcement** – Each route validates inputs and outputs via the JSON Schemas in `schemas/`, surfacing a `400` with `schema_error` when enforcement fails.
+* **Tooling and agents** – Deterministic helpers in [`agents/tools.py`](agents/tools.py) feed structured context into the agents defined under `configs/agents/`, which execute through the `BaseAgent` wrapper in [`agents/base.py`](agents/base.py).
+* **Observability** – The middleware in `app/main.py` captures latency metrics and structured events for both successful and error paths, ensuring downstream monitoring captures guardrail outcomes and token spend.
+
+
 ### Observability & Cost Controls
 
 The API emits structured JSON logs via `observability.log_event` with request metadata, p95 latency, and agent token usage summaries.
