@@ -21,7 +21,17 @@ uvicorn app.main:app --reload --port 8080
 
 ### POST /score
 
-Validates a claim payload against [`schemas/claim.json`](schemas/claim.json) and returns a triage result that matches [`schemas/triage_result.json`](schemas/triage_result.json).
+Runs the claim payload through the guard chain (PII redaction → prompt-injection detection → relevance) before invoking the manager agent. The manager orchestrates feature enrichment and the triage agent, returning an envelope:
+
+```json
+{
+  "handoff": false,
+  "result": { ...triage_result schema... },
+  "reason": "optional human-in-loop rationale"
+}
+```
+
+If the guard chain trips, or if the triage output exceeds the configured HITL threshold / requests manual review, the endpoint flips `handoff` to `true` and publishes an SNS notification when `SNS_HANDOFF_TOPIC_ARN` is set.
 
 ```bash
 curl -s http://localhost:8080/score \
@@ -41,7 +51,7 @@ JSON
 
 ### POST /explain
 
-Chains the investigator and explainer agents. The response conforms to [`schemas/explanation.json`](schemas/explanation.json) and includes a synthetic S3 PDF URL.
+Uses the same guard chain before handing off to the manager flow that calls investigator → explainer. The response mirrors the `/score` envelope and includes the validated explanation payload plus the underlying investigation context.
 
 ```bash
 curl -s http://localhost:8080/explain \
@@ -51,7 +61,7 @@ curl -s http://localhost:8080/explain \
 
 ### POST /feedback
 
-Captures adjudication labels and stores them in DynamoDB when `FEEDBACK_TABLE` is configured, otherwise buffers in-memory.
+Captures adjudication labels and optional `handoff` state. When `FEEDBACK_TABLE` is configured the entry is written to DynamoDB; otherwise it is buffered in-memory. If `handoff` is true the SNS publisher is invoked so downstream reviewers receive the escalation event.
 
 ```bash
 curl -s http://localhost:8080/feedback \
@@ -129,6 +139,15 @@ counts per agent to estimate dollar spend using the pricing table in `observabil
 * Query the in-memory metrics snapshot (`observability.get_metrics().snapshot()`) for dashboards or health endpoints.
 * Responses are requested in streaming mode with a `max_output_tokens` cap (512 by default) to bound model cost while still providing
 schema-conformant JSON payloads.
+
+### Manager Orchestration, Guardrails, and HITL
+
+* `agents/manager.py` coordinates the score and explain flows, invoking the specialist agents while enforcing schema validation on every hop.
+* The `GuardChain` (PII redactor → prompt-injection detector → relevance check) runs inside `app/deps.get_guard_chain` and is applied before any model call.
+* Human-in-the-loop escalation triggers whenever the guard chain blocks a request, the triage score crosses `HITL_RISK_THRESHOLD` (default `0.85`), or downstream agents recommend manual review / denial.
+* Optional environment variables:
+  * `HITL_RISK_THRESHOLD` – override the risk-score cutoff for automatic handoff.
+  * `SNS_HANDOFF_TOPIC_ARN` – publish escalation events to an SNS topic for reviewer notification.
 
 ### Evaluations
 

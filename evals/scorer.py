@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 import yaml
 from fastapi.testclient import TestClient
 
+from agents.manager import ManagerAgent, ManagerConfig
 from agents.tools import rules_eval
 from app import deps
 from app.main import app
@@ -68,30 +69,54 @@ def load_tasks(path: Path) -> List[Dict[str, Any]]:
 def run_tasks(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     client = TestClient(app)
     deps.get_openai_client.cache_clear()
-    app.dependency_overrides[deps.get_openai_client] = lambda: EvalStubOpenAI()
+    deps.get_manager_agent.cache_clear()
+    deps.get_guard_chain.cache_clear()
+    deps.get_handoff_publisher.cache_clear()
+    stub = EvalStubOpenAI()
+    app.dependency_overrides[deps.get_openai_client] = lambda: stub
+    app.dependency_overrides[deps.get_manager_agent] = lambda: ManagerAgent(
+        deps.get_agent_registry(),
+        stub,
+        ManagerConfig(hitl_threshold=deps.get_settings()["hitl_threshold"]),
+    )
     results: List[Dict[str, Any]] = []
     for task in tasks:
         response = client.post("/score", json=task["claim"])
         payload = response.json()
         ok = response.status_code == 200
-        risk_score = payload.get("risk_score", 0) if ok else 0
+        result_payload = payload.get("result", {}) if ok else {}
+        risk_score = result_payload.get("risk_score", 0) if isinstance(result_payload, dict) else 0
+        handoff = bool(payload.get("handoff")) if ok else False
+        guard = payload.get("guard") if ok else None
         passed = ok and risk_score >= task.get("expect_min_risk", 0)
+        if "expect_handoff" in task:
+            expected_handoff = bool(task["expect_handoff"])
+            passed = passed and handoff == expected_handoff
         results.append(
             {
                 "task": task["name"],
                 "status": "ok" if ok else "error",
                 "risk_score": risk_score,
+                "handoff": handoff,
+                "guard": guard,
                 "passed": passed,
             }
         )
     app.dependency_overrides.pop(deps.get_openai_client, None)
+    app.dependency_overrides.pop(deps.get_manager_agent, None)
     deps.get_openai_client.cache_clear()
+    deps.get_manager_agent.cache_clear()
+    deps.get_guard_chain.cache_clear()
+    deps.get_handoff_publisher.cache_clear()
     return results
 
 
 def write_report(path: Path, rows: List[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["task", "status", "risk_score", "passed"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["task", "status", "risk_score", "handoff", "guard", "passed"],
+        )
         writer.writeheader()
         writer.writerows(rows)
 

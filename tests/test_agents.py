@@ -6,6 +6,7 @@ from typing import Any, List
 import pytest
 from fastapi.testclient import TestClient
 
+from agents.manager import ManagerAgent, ManagerConfig
 from app import deps
 from app.main import app
 
@@ -33,9 +34,15 @@ class StubOpenAI:
 @pytest.fixture(autouse=True)
 def clear_openai_cache() -> None:
     deps.get_openai_client.cache_clear()
+    deps.get_manager_agent.cache_clear()
+    deps.get_guard_chain.cache_clear()
+    deps.get_handoff_publisher.cache_clear()
     yield
-    app.dependency_overrides.pop(deps.get_openai_client, None)
+    app.dependency_overrides.clear()
     deps.get_openai_client.cache_clear()
+    deps.get_manager_agent.cache_clear()
+    deps.get_guard_chain.cache_clear()
+    deps.get_handoff_publisher.cache_clear()
 
 
 def make_claim() -> dict[str, Any]:
@@ -62,14 +69,19 @@ def test_score_endpoint_success() -> None:
         })}
     ])
     app.dependency_overrides[deps.get_openai_client] = lambda: stub
+    app.dependency_overrides[deps.get_manager_agent] = lambda: ManagerAgent(
+        deps.get_agent_registry(),
+        stub,
+        ManagerConfig(hitl_threshold=deps.get_settings()["hitl_threshold"]),
+    )
 
     client = TestClient(app)
     response = client.post("/score", json=make_claim())
     assert response.status_code == 200
     data = response.json()
-    assert data["risk_score"] == pytest.approx(0.42)
-    assert data["action"] == "manual_review"
-    app.dependency_overrides.clear()
+    assert data["handoff"] is True
+    assert data["result"]["risk_score"] == pytest.approx(0.42)
+    assert data["result"]["action"] == "manual_review"
 
 
 def test_score_endpoint_schema_error() -> None:
@@ -77,6 +89,11 @@ def test_score_endpoint_schema_error() -> None:
         {"text": json.dumps({"claim_id": "CLM-1", "risk_score": 0.1, "signals": [], "action": "approve"})}
     ])
     app.dependency_overrides[deps.get_openai_client] = lambda: stub
+    app.dependency_overrides[deps.get_manager_agent] = lambda: ManagerAgent(
+        deps.get_agent_registry(),
+        stub,
+        ManagerConfig(hitl_threshold=deps.get_settings()["hitl_threshold"]),
+    )
 
     client = TestClient(app)
     bad_claim = make_claim()
@@ -84,7 +101,6 @@ def test_score_endpoint_schema_error() -> None:
     response = client.post("/score", json=bad_claim)
     assert response.status_code == 400
     assert "schema_error" in response.json()["detail"]
-    app.dependency_overrides.clear()
 
 
 def test_explain_endpoint_success() -> None:
@@ -103,11 +119,17 @@ def test_explain_endpoint_success() -> None:
         })},
     ])
     app.dependency_overrides[deps.get_openai_client] = lambda: stub
+    app.dependency_overrides[deps.get_manager_agent] = lambda: ManagerAgent(
+        deps.get_agent_registry(),
+        stub,
+        ManagerConfig(hitl_threshold=deps.get_settings()["hitl_threshold"]),
+    )
 
     client = TestClient(app)
     response = client.post("/explain", json={"claim_id": "CLM-1"})
     assert response.status_code == 200
     data = response.json()
-    assert data["recommendation"] == "manual_review"
-    assert data["report_url"].startswith("s3://")
-    app.dependency_overrides.clear()
+    assert data["handoff"] is True
+    assert data["result"]["recommendation"] == "manual_review"
+    assert data["result"]["report_url"].startswith("s3://")
+    assert data["investigation"]["claim_id"] == "CLM-1"

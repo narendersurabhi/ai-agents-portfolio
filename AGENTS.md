@@ -105,75 +105,35 @@ output_schema: schemas/explanation.json
 `evals/scorer.py` metrics: `schema_valid_rate`, `guard_trip_rate`, `hitl_rate@threshold`, `latency_p95`.
 
 ## CI/CD invariants
+- Region: us-east-2
+- CodePipeline → CodeBuild → ECR → App Runner
+- Deploy uses role/AppRunnerEcrAccessRole. No self-pass of role/ai-agents.
 
-Region `us-east-2`. CodePipeline → CodeBuild → ECR → App Runner. Deploy uses `role/AppRunnerEcrAccessRole`. Build outputs `image.json`.
+## Secrets
+- OPENAI_API_KEY, AWS_REGION at runtime.
+- No real PHI. Mask sensitive data in logs.
 
-## Secrets and config
+## DoD (per PR)
+- Tests green. Schemas enforced. Evals non-degrading.
+- README/API examples updated if changed.
+- Least-privileged IAM only.
 
-Required: `OPENAI_API_KEY`, `AWS_REGION`. Optional: `SNS_HANDOFF_TOPIC_ARN`, `HITL_THRESHOLD`, `S3_BUCKET_AGENTS`. No real PHI.
+## Task queue
+1) Implement /score (rules_eval + feature_stats + triage agent).
+2) Implement /explain (investigator → explainer, PDF to S3).
+3) Add evals: upcoding_units, impossible_combo, high_freq_modifier.
+4) Observability: structured logs, p95 latency, token cost.
+5) Cost controls: model choice, max tokens, streaming by default.
 
-## Definition of Done
-
-Tests and evals pass. Schemas enforced. README shows orchestration and HITL. No IAM broadening. Region unchanged.
+## Known pitfalls
+- iam:PassRole must target only role/AppRunnerEcrAccessRole.
+- Require ACCESS_ROLE_ARN env; do not fallback to role/ai-agents.
+- Keep schemas strict and versioned.
 
 ## Change log
-
-2025-10-30: v2 adds manager orchestration, guardrails, HITL, termination criteria, and safety evals.
-2025-05-07: Documented the FastAPI request flow in README with a mermaid diagram for reference.
-2025-05-08: Fixed the README mermaid diagram markup so GitHub renders the feedback node correctly.
-
-```
-
-# Codex task prompt
-```
-
-You are a repository-maintenance agent. Implement Agentic Framework v2 per AGENTS.md at repo root. Open a focused PR that adds guardrails, manager orchestration, termination criteria, and HITL plumbing. Keep CI green.
-
-AUTHORITATIVE SPEC
-
-* Use AGENTS.md — Agentic Framework v2. Do not diverge.
-
-GOALS
-
-1. Add guards (relevance, prompt_injection, pii_redactor) and wire GuardChain in FastAPI deps and routes.
-2. Add ManagerAgent with flows: score, explain. Routes call manager.
-3. Update agent YAMLs with numbered schema-first prompts, completion_signal, max_tool_calls.
-4. Enforce HITL: threshold env, return handoff on high risk or guard trip, publish SNS if configured.
-5. Extend evals and tests. Keep CI/CD invariants.
-
-CONSTRAINTS
-
-* Region us-east-2. No IAM or pipeline drift. No real PHI. Pure functions for tools.
-* Enforce JSON Schema on all agent outputs. On failure: HTTP 400 with schema_error.
-
-IMPLEMENTATION STEPS
-
-* Create `agents/guards/{relevance.py,prompt_injection.py,pii_redactor.py}`.
-* Add `agents/manager.py` with `run(flow)` implementing the two flows.
-* Edit YAMLs under `configs/agents/` as in AGENTS.md v2. Keep model `gpt-5`.
-* Update `app/deps.py` to construct `GuardChain` and expose `get_guard_chain()`.
-* Update `app/routes/{score.py,explain.py}` to call guards pre-LLM and enforce schema post-LLM. Add HITL threshold logic.
-* Update `/feedback` to accept `{handoff}` and publish to `SNS_HANDOFF_TOPIC_ARN` when set.
-* Add tests: `tests/test_guards.py`, `tests/test_prompts_contract.py`. Update existing tests.
-* Update `evals/tasks.yaml` and `evals/scorer.py` to include guard/HITL metrics.
-* Update README: orchestration diagram and HITL behavior. Do not edit CDK.
-
-QUALITY GATES
-
-* `pytest -q` passes. `ruff check .` passes. Evals produce non-degrading CSV.
-* No changes to IAM or region. App Runner deploy unchanged.
-
-PR TEMPLATE
-Title: feat(agents): add manager orchestration, guardrails, and HITL (v2)
-Body: problem, approach, files changed, schema updates, tests/evals, risks, rollback.
-
-RUN LOCALLY BEFORE PR
-
-* `pip install -r requirements.txt`
-* `pytest -q && ruff check .`
-* `python -m evals.scorer --tasks evals/tasks.yaml --out evals/report.csv`
-* `uvicorn app.main:app --reload --port 8080`
-
-```
-::contentReference[oaicite:0]{index=0}
-```
+- Added observability middleware with structured JSON logs, rolling p95 latency, and token cost tracking plus streaming defaults for agent calls.
+- Scaffolded schema-first FastAPI runtime with `/score`, `/explain`, and `/feedback` routes using strict JSON schema enforcement.
+- Added agent registry, base runtime, and tool stubs alongside triage/investigator/explainer YAML configurations.
+- Introduced evaluation harness, unit tests, and README documentation covering the new APIs.
+- Added GuardChain (PII redaction, prompt-injection, relevance) with manager-orchestrated flows for `/score` and `/explain`, envelope responses, and HITL escalations.
+- Implemented SNS-backed handoff publisher, feedback handoff propagation, numbered prompts with completion signals, and extended tests/evals for guard coverage.

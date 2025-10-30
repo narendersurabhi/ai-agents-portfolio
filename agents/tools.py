@@ -40,7 +40,11 @@ def feature_stats(claim_id: str) -> Dict[str, Any]:
 
 def provider_history(npi: str) -> Dict[str, Any]:
     flags = []
-    if int(npi[-1]) % 2 == 0:
+    try:
+        last_digit = int(str(npi)[-1])
+    except (ValueError, IndexError):
+        last_digit = None
+    if last_digit is not None and last_digit % 2 == 0:
         flags.append("Peer z-score above 2.5")
     if npi.startswith("99"):
         flags.append("Recent SIU referral")

@@ -45,6 +45,8 @@ class AgentRegistry:
             system_prompt=data.get("system_prompt", ""),
             tool_names=tool_names,
             schema=schema,
+            completion_signal=data.get("completion_signal"),
+            max_tool_calls=data.get("max_tool_calls"),
         )
         return BaseAgent(definition, available_tools)
 
