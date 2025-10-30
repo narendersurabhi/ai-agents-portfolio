@@ -72,52 +72,69 @@ curl -s http://localhost:8080/feedback \
 
 ### Request flow overview
 
-The FastAPI stack in [`app/main.py`](app/main.py) wires the observability middleware before delegating to the individual routers in [`app/routes/`](app/routes). Requests are validated against JSON Schemas, enriched with deterministic tooling, executed through schema-constrained OpenAI agents, and finally returned with any side effects (PDF rendering or feedback persistence) applied. The following diagram highlights how each endpoint is orchestrated end-to-end:
+Every request enters the FastAPI stack in [`app/main.py`](app/main.py), which wraps the routers with latency/tokens instrumentation and then resolves dependencies from [`app/deps.py`](app/deps.py). From there each endpoint follows the same guard-first, schema-first pattern:
+
+1. **Observability middleware** captures request metadata and duration before handing execution to the target router.
+2. **Guard chain** (`PIIRedactorGuard → PromptInjectionGuard → RelevanceGuard`) sanitizes inputs and can short-circuit execution by returning a human-review handoff.
+3. **Manager-orchestrated agents** enrich requests with deterministic tools and call the OpenAI Responses API using the schema-aware wrappers in [`agents/base.py`](agents/base.py).
+4. **HITL escalation** checks (risk-score thresholds, manual-review recommendations, or guard trips) emit payloads via `HandoffPublisher` to SNS when configured.
+5. **Response envelopes** always return `{handoff: bool, ...}` alongside validated agent output or persisted feedback acknowledgements.
 
 ```mermaid
 flowchart TD
-    subgraph HTTP Layer
-        Client((Client)) -->|POST /score| Observability
-        Client -->|POST /explain| Observability
-        Client -->|POST /feedback| Observability
-        Observability[[app.main: observability_middleware]] --> RouterSelection[[FastAPI router dispatch]]
-        RouterSelection --> ScoreRoute[[app/routes/score.py]]
-        RouterSelection --> ExplainRoute[[app/routes/explain.py]]
-        RouterSelection --> FeedbackRoute[[app/routes/feedback.py]]
-    end
+    Client((Client)) -->|POST /score| Middleware[[app.main: observability_middleware]]
+    Client -->|POST /explain| Middleware
+    Client -->|POST /feedback| Middleware
+    Middleware --> Router{FastAPI router dispatch}
+
+    Router --> ScoreRoute[[app/routes/score.py]]
+    Router --> ExplainRoute[[app/routes/explain.py]]
+    Router --> FeedbackRoute[[app/routes/feedback.py]]
 
     subgraph Score Flow
-        ScoreRoute -->|validate| ClaimSchema[[schemas/claim.json]]
-        ScoreRoute -->|compose payload| ScoreTools[[rules_eval\nfeature_stats\nprovider_history]]
-        ScoreTools --> ScoreRoute
-        ScoreRoute -->|run triage agent| TriageAgent[[configs/agents/triage.agent.yaml]]
-        TriageAgent -->|responses.create| OpenAI[(OpenAI Responses API)]
-        TriageAgent -->|enforce| TriageSchema[[schemas/triage_result.json]]
-        TriageAgent --> ScoreResponse{{Triage result}}
+        ScoreRoute -->|jsonschema.validate| ClaimSchema[[schemas/claim.json]]
+        ClaimSchema --> GuardScore[[GuardChain (PII -> Prompt Injection -> Relevance)]]
+        GuardScore -->|handoff| ScoreHandoff{{handoff: true}}
+        ScoreHandoff --> Publisher[(HandoffPublisher → SNS)]
+        GuardScore -->|sanitized claim| ScoreManager[[ManagerAgent (score flow)]]
+        ScoreManager --> Tools[[rules_eval\nfeature_stats\nprovider_history]]
+        Tools --> ScoreManager
+        ScoreManager --> Triage[[Triage Agent (configs/agents/triage.agent.yaml)]]
+        Triage -->|responses.create| OpenAI[(OpenAI Responses API)]
+        Triage --> TriageSchema[[schemas/triage_result.json]]
+        TriageSchema --> HitlScore{{HITL threshold & action checks}}
+        HitlScore --> ScoreEnvelope[[HTTP envelope {handoff, result, reason?}]]
+        ScoreEnvelope --> Publisher
     end
 
     subgraph Explain Flow
-        ExplainRoute -->|load investigator| Investigator[[configs/agents/investigator.agent.yaml]]
+        ExplainRoute --> GuardExplain[[GuardChain (PII -> Prompt Injection -> Relevance)]]
+        GuardExplain -->|handoff| ExplainHandoff{{handoff: true}}
+        ExplainHandoff --> Publisher
+        GuardExplain --> ExplainManager[[ManagerAgent (explain flow)]]
+        ExplainManager --> Investigator[[Investigator Agent]]
         Investigator -->|responses.create| OpenAI
-        Investigator --> Investigation{{Investigation JSON}}
-        ExplainRoute --> Investigation
-        ExplainRoute -->|load explainer| Explainer[[configs/agents/explainer.agent.yaml]]
+        Investigator --> Investigation[[Investigation JSON]]
+        ExplainManager --> Explainer[[Explainer Agent]]
         Explainer -->|responses.create| OpenAI
-        Explainer --> Explanation{{Explanation JSON}}
-        Explanation -->|attach report| RenderPDF[[agents.tools.render_pdf]]
-        RenderPDF --> Explanation
-        Explainer -->|enforce| ExplanationSchema[[schemas/explanation.json]]
+        Explainer --> RenderPDF[[agents.tools.render_pdf]]
+        RenderPDF --> Explainer
+        Explainer --> ExplanationSchema[[schemas/explanation.json]]
+        ExplanationSchema --> ExplainEnvelope[[HTTP envelope {handoff, result, investigation}]]
+        ExplainEnvelope --> Publisher
     end
 
     subgraph Feedback Flow
-        FeedbackRoute[[app/routes/feedback.py]] --> FeedbackRepo[[app.deps.FeedbackRepository]]
-        FeedbackRepo -->|put| Dynamo[(DynamoDB Table or in-memory buffer)]
-        FeedbackRepo --> FeedbackResponse{{Feedback ACK JSON}}
+        FeedbackRoute --> FeedbackRepo[[FeedbackRepository]]
+        FeedbackRepo --> Storage[(DynamoDB table or in-memory buffer)]
+        FeedbackRoute -->|handoff flag| FeedbackHandoff{{handoff: true}}
+        FeedbackHandoff --> Publisher
+        FeedbackRepo --> FeedbackAck[[HTTP envelope {ok: true}]]
     end
 
-    ScoreResponse -->|HTTP 200/400| Client
-    Explanation -->|HTTP 200/400| Client
-    FeedbackResponse -->|HTTP 200| Client
+    ScoreEnvelope --> Client
+    ExplainEnvelope --> Client
+    FeedbackAck --> Client
 ```
 
 The feedback acknowledgment payload is a minimal JSON body of `{"ok": true}`.
@@ -126,7 +143,7 @@ The feedback acknowledgment payload is a minimal JSON body of `{"ok": true}`.
 
 * **Schema enforcement** – Each route validates inputs and outputs via the JSON Schemas in `schemas/`, surfacing a `400` with `schema_error` when enforcement fails.
 * **Tooling and agents** – Deterministic helpers in [`agents/tools.py`](agents/tools.py) feed structured context into the agents defined under `configs/agents/`, which execute through the `BaseAgent` wrapper in [`agents/base.py`](agents/base.py).
-* **Observability** – The middleware in `app/main.py` captures latency metrics and structured events for both successful and error paths, ensuring downstream monitoring captures guardrail outcomes and token spend.
+* **Observability & HITL** – The middleware in `app/main.py` captures latency metrics and structured events, while handoff decisions are funneled through `HandoffPublisher` so reviewers or downstream systems can react in near-real time.
 
 
 ### Observability & Cost Controls
