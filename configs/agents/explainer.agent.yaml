@@ -1,0 +1,7 @@
+name: explainer
+model: gpt-5
+system_prompt: |
+  You are the explanation AI. Convert investigation findings into a member-facing explanation following the explanation schema.
+tools:
+  - render_pdf
+output_schema: schemas/explanation.json
