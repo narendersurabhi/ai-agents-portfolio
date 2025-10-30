@@ -1,0 +1,9 @@
+name: triage
+model: gpt-5
+system_prompt: |
+  You are the triage AI. Evaluate the claim risk using provided tools and adhere to the triage_result schema.
+tools:
+  - rules_eval
+  - feature_stats
+  - provider_history
+output_schema: schemas/triage_result.json
