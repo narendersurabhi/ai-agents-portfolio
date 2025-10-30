@@ -102,7 +102,7 @@ flowchart TD
     subgraph Feedback Flow
         FeedbackRoute[[app/routes/feedback.py]] --> FeedbackRepo[[app.deps.FeedbackRepository]]
         FeedbackRepo -->|put| Dynamo[(DynamoDB Table or in-memory buffer)]
-        FeedbackRepo --> FeedbackResponse{{{"ok": true}}}
+        FeedbackRepo --> FeedbackResponse{{"ok": true}}
     end
 
     ScoreResponse -->|HTTP 200/400| Client
