@@ -1,79 +1,108 @@
-# AGENTS.md — Codex Agent Playbook
+# AGENTS.md — Agentic Framework v2 (Guardrails + Orchestration + HITL)
 
-Purpose: enable autonomous PRs that add or improve agentic AI features for healthcare FWA detection and resume tooling, with strict safety, tests, and CI/CD to AWS App Runner.
+Purpose: detect healthcare FWA with schema-first agents, observable flows, and explicit human-in-the-loop (HITL) handoffs.
 
 ## Repo map (authoritative)
-```
-app/                  # FastAPI app (HTTP API, streaming)
+app/
   main.py
-  deps.py
+  deps.py                 # clients, guard chain, settings
   routes/
-    score.py          # /score (triage)
-    explain.py        # /explain (investigate+explain)
-    feedback.py       # /feedback
+    score.py             # /score  → manager(flow="score")
+    explain.py           # /explain → manager(flow="explain")
+    feedback.py          # /feedback
 agents/
-  base.py             # BaseAgent, Tool wiring, schema enforcement
-  registry.py         # YAML loader
-  tools.py            # tool handlers (S3, rules_eval, feature_stats, etc.)
+  base.py                # BaseAgent, schema enforcement, tool router
+  registry.py            # YAML loader
+  tools.py               # rules_eval, feature_stats, provider_history, search_policy, render_pdf, s3_get/s3_put
+  manager.py             # ManagerAgent.run(flow)
+  guards/
+    relevance.py
+    prompt_injection.py
+    pii_redactor.py
 configs/
   agents/
     triage.agent.yaml
     investigator.agent.yaml
     explainer.agent.yaml
-schemas/              # JSON Schema Draft 2020-12
+schemas/
   claim.json
   triage_result.json
   investigation.json
   explanation.json
+  feedback.json
 evals/
-  tasks.yaml          # eval scenarios
-  scorer.py           # scoring and report
+  tasks.yaml
+  scorer.py
 tests/
   test_schemas.py
   test_runtime.py
   test_agents.py
-docker/
-  Dockerfile
-buildspec.yml
-cdk/
-  cdk-py/             # CDK pipeline (CodePipeline → CodeBuild → App Runner)
-README.md
-AGENTS.md
-```
+  test_guards.py
+  test_prompts_contract.py
 
-## Commands
-- Install: `pip install -r requirements.txt`
-- Dev API: `uvicorn app.main:app --reload --port 8080`
-- Tests: `pytest -q`
-- Evals: `python -m evals.scorer --tasks evals/tasks.yaml --out evals/report.csv`
-- Lint/format: `ruff check . && ruff format --check .`
+## Orchestration pattern
+Manager-orchestrated flows. Single entry. Explicit termination and handoff.
+- score: guards → tools → triage agent → validate → maybe HITL.
+- explain: guards → investigator agent → explainer agent (+ render_pdf) → validate → maybe HITL.
+Termination: each agent uses `completion_signal: "<END_OF_TASK>"` for tests only. Output is pure JSON.
+
+## Guardrails
+- relevance: reject off-scope inputs.
+- prompt_injection: detect jailbreak markers; deny or strip.
+- pii_redactor: mask phone, SSN, MRN in logs only.
+Wiring: `GuardChain([relevance, prompt_injection])` runs pre-LLM. `pii_redactor` wraps logger.
+On guard trip: HTTP 422 with `{reason, handoff:"human_review"}`. Optional SNS notify.
+
+## Human-in-the-loop (HITL)
+Env: `HITL_THRESHOLD` (default 0.6). If `risk_score >= threshold` or guard trips → `{handoff:"human_review"}`.
+`/feedback` accepts `{claim_id,label,notes,handoff}`. Store to DynamoDB if configured, else memory.
+Optional: `SNS_HANDOFF_TOPIC_ARN` to publish events.
 
 ## Agent contracts
-- Specs in `configs/agents/*.agent.yaml`.
-- Each must reference a JSON schema under `schemas/`.
-- Outputs must validate. On failure: HTTP 400 `schema_error`.
+YAML lives in `configs/agents/*.agent.yaml`. Reference JSON Schemas in `schemas/`. Use numbered, schema-first prompts.
 
-YAML example:
+Example `triage.agent.yaml`
 ```yaml
 name: triage
 model: gpt-5
+max_tool_calls: 4
+completion_signal: "<END_OF_TASK>"
 system_prompt: |
-  Score fraud risk 0..1; cite rules and peer deviations. Output triage_result schema.
+  1) Read the claim JSON.
+  2) Call tools: rules_eval → feature_stats → provider_history.
+  3) Output JSON that validates schemas/triage_result.json only.
+  4) If validation fails, emit {"schema_error":"<reason>"} and stop.
+  5) No PHI in output. Calibrate: 0–0.2 approve, 0.2–0.6 queue_review, 0.6–1.0 auto_deny unless contradicting evidence.
 tools: [rules_eval, feature_stats, provider_history]
 output_schema: schemas/triage_result.json
+````
+
+Example `explainer.agent.yaml`
+
+```yaml
+name: explainer
+model: gpt-5
+completion_signal: "<END_OF_TASK>"
+system_prompt: |
+  1) Read investigation JSON.
+  2) Synthesize a concise reviewer note with citations.
+  3) Call render_pdf to create a one-page PDF.
+  4) Output schemas/explanation.json only.
+tools: [render_pdf]
+output_schema: schemas/explanation.json
 ```
 
-## Tools
-Pure functions in `agents/tools.py`. Allowed by default:
-- s3_get, s3_put
-- rules_eval, feature_stats, provider_history
-- search_policy, render_pdf
-
 ## HTTP API
-- POST /score → claim.json → triage_result.json
-- POST /explain → {claim_id} → explanation.json
-- POST /feedback → {claim_id,label,notes} → {ok:true}
-Streaming endpoint exists at `/v1/agents/{agent}/chat` for long calls.
+
+* POST /score → body matches `schemas/claim.json` → returns `schemas/triage_result.json` or 422 with HITL.
+* POST /explain → body `{claim_id}` → returns `schemas/explanation.json` (+ `report_url`).
+* POST /feedback → body `schemas/feedback.json` → `{ok:true}`.
+  Streaming: `/v1/agents/{agent}/chat` for long tasks.
+
+## Evals
+
+`evals/tasks.yaml`: `upcoding_units`, `impossible_combo`, `high_freq_modifier`, `off_topic_query`, `prompt_injection_string`, `phi_present`.
+`evals/scorer.py` metrics: `schema_valid_rate`, `guard_trip_rate`, `hitl_rate@threshold`, `latency_p95`.
 
 ## CI/CD invariants
 - Region: us-east-2
