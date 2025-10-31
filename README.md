@@ -207,6 +207,11 @@ python -m src.app.cli ask "Summarize the docs and list key risks."
 - `redis` - stores vectors in Redis Stack / RediSearch. Configure `REDIS_URL`, optional
   `REDIS_PASSWORD`, plus `REDIS_INDEX`, `REDIS_PREFIX`, and `REDIS_VECTOR_FIELD`.
 
+Faiss-specific settings (optional S3 sync):
+- `FAISS_LOCAL_PATH` (default `data/vector_index/faiss.index`)
+- `FAISS_S3_BUCKET` and `FAISS_S3_KEY` to enable S3 checkpoints
+- `FAISS_S3_CHECKPOINT_SEC` checkpoint interval (seconds, default 3600)
+
 - `numpy` – loads `vectors.npy` for in-memory cosine search.
 - `chroma` – persists chunks to a local Chroma collection (`VECTOR_COLLECTION`).
 - `opensearch` – indexes into an external OpenSearch cluster. Configure `OPENSEARCH_URL`, optional

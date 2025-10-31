@@ -310,7 +310,7 @@ def main() -> int:
                     ),
                 )
                 definition = IndexDefinition(prefix=[prefix], index_type=IndexType.HASH)
-                ft.create_index(schema, définition=definition)
+                ft.create_index(schema, definition=definition)
             pipe = client.pipeline(transaction=False)
             for (doc_id, chunk_idx, ch_text), embedding in zip(records, embeddings):
                 key = f"{prefix}{doc_id}::{chunk_idx}"
