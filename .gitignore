@@ -1,0 +1,62 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Build and packaging
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Test, lint, coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Environment files (secrets)
+.env
+.env.*
+*.env
+
+# Data and generated artifacts
+data/
+tmp/
+tmp_*/
+tmp*/
+
+# AWS CDK outputs
+cdk.out/
+**/cdk.out/
+cdk.context.json
+
+# Node (if present under CDK or tools)
+node_modules/
+

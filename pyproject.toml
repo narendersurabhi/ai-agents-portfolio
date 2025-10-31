@@ -16,7 +16,13 @@ dependencies = [
   "jsonschema",
   "pyyaml",
   "boto3",
-  "openai"
+  "openai",
+  "pypdf",
+  "numpy",
+  "chromadb",
+  "redis",
+  "opensearch-py",
+  "faiss-cpu"
 ]
 
 [tool.ruff]
