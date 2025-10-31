@@ -3,6 +3,7 @@
 Purpose: detect healthcare FWA with schema-first agents, observable flows, and explicit human-in-the-loop (HITL) handoffs.
 
 ## Repo map (authoritative)
+```
 app/
   main.py
   deps.py                 # clients, guard chain, settings
@@ -39,6 +40,7 @@ tests/
   test_agents.py
   test_guards.py
   test_prompts_contract.py
+```
 
 ## Orchestration pattern
 Manager-orchestrated flows. Single entry. Explicit termination and handoff.
