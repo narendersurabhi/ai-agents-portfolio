@@ -180,6 +180,39 @@ python -m evals.scorer --tasks evals/tasks.yaml --out evals/report.csv
 cp .env.example .env   # set OPENAI_API_KEY or provider of choice
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
+# Optional: choose vector backend (raises if dependency/service missing)
+# export VECTOR_BACKEND=json       # default JSON scorer
+# export VECTOR_BACKEND=numpy      # requires numpy (PowerShell: setx VECTOR_BACKEND numpy)
+# export VECTOR_BACKEND=faiss      # requires faiss-cpu or faiss-cpu-windows
+# export VECTOR_BACKEND=chroma     # requires chromadb
+# export VECTOR_BACKEND=opensearch # requires opensearch-py + running cluster
+# export VECTOR_BACKEND=redis      # requires redis with RediSearch module
+# export VECTOR_COLLECTION=docs    # optional collection name override
+# export VECTOR_BACKEND=chroma     # requires chromadb     # requires chromadb
+# export VECTOR_BACKEND=opensearch # requires opensearch-py + running cluster
+# export VECTOR_BACKEND=redis      # requires redis with RediSearch module
+# export VECTOR_COLLECTION=docs    # optional collection name override
 python -m src.pipelines.ingest_docs --path data/docs
 python -m src.pipelines.build_index --src data/docs --out data/vector_index
 python -m src.app.cli ask "Summarize the docs and list key risks."
+```
+
+### Vector backends
+
+- `numpy` - loads `vectors.npy` for in-memory cosine search.
+- `faiss` - builds a Faiss index (`faiss.index`); requires faiss-cpu (or faiss-cpu-windows).
+- `chroma` - persists chunks to a local Chroma collection (`VECTOR_COLLECTION`).
+- `opensearch` - indexes into an external OpenSearch cluster. Configure `OPENSEARCH_URL`, optional
+  `OPENSEARCH_USER`/`OPENSEARCH_PASSWORD`, and `OPENSEARCH_INDEX`.
+- `redis` - stores vectors in Redis Stack / RediSearch. Configure `REDIS_URL`, optional
+  `REDIS_PASSWORD`, plus `REDIS_INDEX`, `REDIS_PREFIX`, and `REDIS_VECTOR_FIELD`.
+
+- `numpy` – loads `vectors.npy` for in-memory cosine search.
+- `chroma` – persists chunks to a local Chroma collection (`VECTOR_COLLECTION`).
+- `opensearch` – indexes into an external OpenSearch cluster. Configure `OPENSEARCH_URL`, optional
+  `OPENSEARCH_USER`/`OPENSEARCH_PASSWORD`, and `OPENSEARCH_INDEX`.
+- `redis` – stores vectors in Redis Stack / RediSearch. Configure `REDIS_URL`, optional
+  `REDIS_PASSWORD`, plus `REDIS_INDEX`, `REDIS_PREFIX`, and `REDIS_VECTOR_FIELD`.
+
+If the chosen backend is unavailable or misconfigured, the build step and runtime raise an error
+rather than silently falling back to JSON, so your configuration always matches the deployed state.
