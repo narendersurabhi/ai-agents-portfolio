@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import atexit
 import glob
 import json
 import os
+import signal
+import threading
 from array import array
+from pathlib import Path
 from typing import Any, Dict, List
 
 try:  # optional
@@ -15,6 +19,11 @@ try:  # optional
     import faiss  # type: ignore
 except Exception:  # pragma: no cover
     faiss = None  # type: ignore
+
+try:  # optional
+    import boto3  # type: ignore
+except Exception:  # pragma: no cover
+    boto3 = None  # type: ignore
 
 try:  # optional
     import chromadb
@@ -47,6 +56,13 @@ class LocalVectorStore:
         self._records: List[Dict[str, Any]] | None = None
         self._vectors = None
         self._faiss_index = None
+        self._faiss_lock = threading.RLock()
+        self._faiss_checkpoint: _FaissCheckpoint | None = None
+        self._faiss_local_path: Path | None = None
+        self._faiss_s3_bucket: str | None = None
+        self._faiss_s3_key: str | None = None
+        self._faiss_checkpoint_interval: int | None = None
+        self._faiss_s3_client = None
         self._chroma_client = None
         self._chroma_collection = None
         self._opensearch_client = None
@@ -96,6 +112,25 @@ class LocalVectorStore:
             or "embedding"
         )
 
+        if self._backend == "faiss":
+            default_path = Path(self.path) / "faiss.index"
+            self._faiss_local_path = Path(os.getenv("FAISS_LOCAL_PATH", str(default_path)))
+            self._faiss_s3_bucket = os.getenv("FAISS_S3_BUCKET")
+            self._faiss_s3_key = os.getenv("FAISS_S3_KEY")
+            interval = os.getenv("FAISS_S3_CHECKPOINT_SEC")
+            self._faiss_checkpoint_interval = int(interval) if interval else 3600
+            if (self._faiss_s3_bucket or self._faiss_s3_key) and not (
+                self._faiss_s3_bucket and self._faiss_s3_key
+            ):
+                raise RuntimeError(
+                    "FAISS_S3_BUCKET and FAISS_S3_KEY must both be set to enable Faiss S3 checkpoints"
+                )
+            if self._faiss_s3_bucket:
+                if boto3 is None:
+                    raise RuntimeError("boto3 is required for Faiss S3 synchronization")
+                self._faiss_s3_client = boto3.client("s3")  # type: ignore[attr-defined]
+
+    # ------------------------------------------------------------------
     def search(
         self,
         query: str,
@@ -120,6 +155,11 @@ class LocalVectorStore:
         if self._backend == "redis":
             return self._redis_search(query_vec, top_k, include_text, include_embedding)
         raise ValueError(f"Unsupported vector backend: {self._backend}")
+
+    def reload(self) -> None:
+        """Reload the backing vector index if supported."""
+        if self._backend == "faiss":
+            self._reload_faiss_index()
 
     def _json_search(
         self,
@@ -194,17 +234,18 @@ class LocalVectorStore:
     ) -> List[Dict[str, Any]]:
         if faiss is None or _np is None:
             raise RuntimeError("Faiss backend not available")
-        self._ensure_faiss_index()
-        if self._faiss_index is None:
-            raise RuntimeError("Faiss index missing")
-        query_arr = _np.array(query_vec, dtype="float32")
-        if query_arr.ndim != 1:
-            query_arr = query_arr.reshape(-1)
-        faiss.normalize_L2(query_arr.reshape(1, -1))
-        distances, indices = self._faiss_index.search(query_arr.reshape(1, -1), top_k)
+        with self._faiss_lock:
+            self._ensure_faiss_index()
+            if self._faiss_index is None:
+                raise RuntimeError("Faiss index missing")
+            query_arr = _np.array(query_vec, dtype="float32")
+            if query_arr.ndim != 1:
+                query_arr = query_arr.reshape(-1)
+            faiss.normalize_L2(query_arr.reshape(1, -1))
+            distances, indices = self._faiss_index.search(query_arr.reshape(1, -1), top_k)
         results: List[Dict[str, Any]] = []
         for score, idx in zip(distances[0], indices[0]):
-            if idx < 0 or idx >= len(self._records):
+            if idx < 0 or idx >= len(self._records or []):
                 continue
             rec = self._records[idx]
             item: Dict[str, Any] = {
@@ -310,7 +351,7 @@ class LocalVectorStore:
         search = self._redis_client.ft(self._redis_index)
         vector_bytes = array("f", query_vec).tobytes()
         query = (
-            Query(f"*=>[KNN {top_k} @{self._redis_vector_field}  AS vector_distance]")
+            Query(f"*=>[KNN {top_k} @{self._redis_vector_field} $vec AS vector_distance]")
             .sort_by("vector_distance")
             .return_fields("document_id", "chunk", "text", "vector_distance")
             .dialect(2)
@@ -386,22 +427,53 @@ class LocalVectorStore:
     def _ensure_faiss_index(self) -> None:
         if self._faiss_index is not None or faiss is None:
             return
-        index_path = os.path.join(self.path, "faiss.index")
-        if not os.path.exists(index_path):
-            raise RuntimeError("faiss index file not found")
-        try:
-            index = faiss.read_index(index_path)
-        except Exception as exc:
-            raise RuntimeError(f"failed to read faiss index: {exc}") from exc
-        if self._records is None or index.ntotal != len(self._records):
-            raise RuntimeError("faiss index count does not match records")
-        self._faiss_index = index
+        if self._faiss_local_path is None:
+            raise RuntimeError("Faiss local path is not configured")
+        with self._faiss_lock:
+            if self._faiss_index is not None:
+                return
+            self._download_faiss_index()
+            try:
+                index = faiss.read_index(str(self._faiss_local_path))
+            except Exception as exc:
+                raise RuntimeError(f"failed to read faiss index: {exc}") from exc
+            self._faiss_index = index
+            if self._faiss_s3_client and self._faiss_checkpoint is None:
+                self._faiss_checkpoint = _FaissCheckpoint(
+                    index=index,
+                    local_path=self._faiss_local_path,
+                    bucket=self._faiss_s3_bucket,  # type: ignore[arg-type]
+                    key=self._faiss_s3_key,  # type: ignore[arg-type]
+                    interval=self._faiss_checkpoint_interval or 3600,
+                    s3_client=self._faiss_s3_client,
+                )
+
+    def _reload_faiss_index(self) -> None:
+        if faiss is None:
+            raise RuntimeError("Faiss backend not available")
+        if self._faiss_local_path is None:
+            raise RuntimeError("Faiss local path is not configured")
+        with self._faiss_lock:
+            if self._faiss_checkpoint:
+                self._faiss_checkpoint.stop()
+                self._faiss_checkpoint = None
+            self._faiss_index = None
+            self._download_faiss_index()
+            index = faiss.read_index(str(self._faiss_local_path))
+            self._faiss_index = index
+            if self._faiss_s3_client:
+                self._faiss_checkpoint = _FaissCheckpoint(
+                    index=index,
+                    local_path=self._faiss_local_path,
+                    bucket=self._faiss_s3_bucket,  # type: ignore[arg-type]
+                    key=self._faiss_s3_key,  # type: ignore[arg-type]
+                    interval=self._faiss_checkpoint_interval or 3600,
+                    s3_client=self._faiss_s3_client,
+                )
 
     def _ensure_chroma_collection(self) -> None:
-        if self._backend != "chroma" or self._chroma_collection is not None:
+        if self._backend != "chroma" or chromadb is None or self._chroma_collection is not None:
             return
-        if chromadb is None:
-            raise RuntimeError("Chroma backend not available")
         try:
             settings = Settings(anonymized_telemetry=False) if Settings is not None else None
         except Exception:
@@ -452,3 +524,109 @@ class LocalVectorStore:
             )
         except Exception as exc:
             raise RuntimeError(f"Failed to connect to Redis: {exc}") from exc
+
+    def _download_faiss_index(self) -> None:
+        assert self._faiss_local_path is not None
+        local_path = self._faiss_local_path
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        if self._faiss_s3_client:
+            try:
+                self._faiss_s3_client.download_file(
+                    self._faiss_s3_bucket,  # type: ignore[arg-type]
+                    self._faiss_s3_key,  # type: ignore[arg-type]
+                    str(local_path),
+                )
+            except Exception as exc:
+                raise RuntimeError(f"failed to download Faiss index from S3: {exc}") from exc
+        elif not local_path.exists():
+            raise RuntimeError(f"faiss backend requires index at {local_path}; file not found")
+
+
+class _FaissCheckpoint:
+    def __init__(
+        self,
+        *,
+        index,
+        local_path: Path,
+        bucket: str,
+        key: str,
+        interval: int,
+        s3_client,
+    ) -> None:
+        self.index = index
+        self.local_path = local_path
+        self.bucket = bucket
+        self.key = key
+        self.interval = interval
+        self.s3_client = s3_client
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="faiss-checkpoint")
+        self._lock = threading.Lock()
+        _register_faiss_checkpoint(self)
+        atexit.register(self.stop)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.interval):
+            try:
+                self._upload()
+            except Exception as exc:
+                print(f"Faiss checkpoint upload failed: {exc}")
+
+    def stop(self) -> None:
+        if self._stop.is_set():
+            return
+        self._stop.set()
+        if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=10)
+        try:
+            self._upload()
+        except Exception as exc:
+            print(f"Faiss checkpoint final upload failed: {exc}")
+        finally:
+            _unregister_faiss_checkpoint(self)
+
+    def _upload(self) -> None:
+        if faiss is None:
+            return
+        with self._lock:
+            self.local_path.parent.mkdir(parents=True, exist_ok=True)
+            faiss.write_index(self.index, str(self.local_path))
+            self.s3_client.upload_file(str(self.local_path),  # type: ignore[arg-type]
+                                       self.bucket,  # type: ignore[arg-type]
+                                       self.key)
+
+
+_FAISS_SIGNAL_LOCK = threading.Lock()
+_FAISS_SIGNAL_INSTALLED = False
+_FAISS_CHECKPOINTS: List[_FaissCheckpoint] = []
+
+
+def _register_faiss_checkpoint(checkpoint: _FaissCheckpoint) -> None:
+    global _FAISS_SIGNAL_INSTALLED
+    with _FAISS_SIGNAL_LOCK:
+        if checkpoint not in _FAISS_CHECKPOINTS:
+            _FAISS_CHECKPOINTS.append(checkpoint)
+        if _FAISS_SIGNAL_INSTALLED:
+            return
+
+        def _handler(signum, frame):  # pragma: no cover - signal path
+            for chk in list(_FAISS_CHECKPOINTS):
+                try:
+                    chk.stop()
+                except Exception as exc:  # pragma: no cover
+                    print(f"Faiss checkpoint stop error: {exc}")
+            raise SystemExit(0)
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                signal.signal(sig, _handler)
+            except (ValueError, OSError):  # pragma: no cover - signals not supported
+                pass
+        _FAISS_SIGNAL_INSTALLED = True
+
+
+def _unregister_faiss_checkpoint(checkpoint: _FaissCheckpoint) -> None:
+    with _FAISS_SIGNAL_LOCK:
+        if checkpoint in _FAISS_CHECKPOINTS:
+            _FAISS_CHECKPOINTS.remove(checkpoint)

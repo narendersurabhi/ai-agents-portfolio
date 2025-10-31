@@ -81,6 +81,46 @@ def test_faiss_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert results and results[0]["id"] == "doc1"
 
 
+
+
+def test_faiss_reload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    faiss = pytest.importorskip('faiss')
+    index_dir = tmp_path / 'faiss_reload'
+    index_dir.mkdir()
+    records = [
+        {'id': 'doc1', 'chunk': 0, 'text': 'alpha', 'embedding': [1.0, 0.0]},
+        {'id': 'doc2', 'chunk': 1, 'text': 'beta', 'embedding': [0.0, 1.0]},
+    ]
+    _write_index(index_dir, records)
+
+    vectors = np.array([r['embedding'] for r in records], dtype='float32')
+    faiss.normalize_L2(vectors)
+    index = faiss.IndexFlatIP(vectors.shape[1])
+    index.add(vectors)
+    local_path = index_dir / 'faiss.index'
+    faiss.write_index(index, str(local_path))
+    (index_dir / 'meta.json').write_text(json.dumps({'backend': 'faiss'}), encoding='utf-8')
+
+    monkeypatch.setenv('VECTOR_BACKEND', 'faiss')
+    monkeypatch.setenv('FAISS_LOCAL_PATH', str(local_path))
+    for env in ('FAISS_S3_BUCKET', 'FAISS_S3_KEY'):
+        monkeypatch.delenv(env, raising=False)
+    monkeypatch.setattr('src.tools.vector_store.embed_text', lambda _: [1.0, 0.0])
+
+    store = LocalVectorStore(str(index_dir))
+    initial = store.search('alpha', top_k=2)
+    assert initial and initial[0]['id'] == 'doc1'
+
+    # Write a new index where doc2 is the closest match
+    new_vectors = np.array([[0.0, 1.0], [1.0, 0.0]], dtype='float32')
+    faiss.normalize_L2(new_vectors)
+    new_index = faiss.IndexFlatIP(new_vectors.shape[1])
+    new_index.add(new_vectors)
+    faiss.write_index(new_index, str(local_path))
+
+    store.reload()
+    refreshed = store.search('alpha', top_k=2)
+    assert refreshed and refreshed[0]['id'] == 'doc2'
 def test_chroma_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     chroma = pytest.importorskip("chromadb")
     try:
