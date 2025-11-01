@@ -117,7 +117,7 @@ class RetrievalAgent:
         # Allow override via env for compatibility
         self.model = model or os.getenv("CHAT_MODEL") or "gpt-4o-mini"
 
-    def _llm_answer(self, question: str, docs: List[Dict[str, Any]]) -> str:
+    def _llm_answer(self, question: str, docs: List[Dict[str, Any]]) -> str:        
         context_blocks = []
         for idx, d in enumerate(docs, start=1):
             src = d.get("id", "")
@@ -282,6 +282,11 @@ class RetrievalAgent:
             return "\n".join(lines)
 
     def _mmr(self, q_vec: List[float], cands: List[Dict[str, Any]], k: int, lam: float = 0.75) -> List[Dict[str, Any]]:
+        """
+        Maximal Marginal Relevance selection from candidates based on query vector. 
+        Select k items from cands balancing relevance to q_vec and diversity among selected.
+        """
+
         if not cands:
             return []
         # Ensure embeddings are present
