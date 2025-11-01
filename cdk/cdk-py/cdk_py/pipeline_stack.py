@@ -159,17 +159,23 @@ class PipelineStack(Stack):
                             '\'AuthenticationConfiguration\':{\'AccessRoleArn\': os.environ[\'ACCESS_ROLE_ARN\']}, '
                             '\'AutoDeploymentsEnabled\': True}))")',
                             # create or update
-                            'if [ -z "$SVC" ]; then '
-                            '  aws apprunner create-service --service-name ai-agents-portfolio '
-                            '    --source-configuration "$SRC_CONFIG"; '
-                            'else '
+                            'if [ -z "$SVC" ] || [ "$SVC" = "None" ]; then ',
+                            '  echo "Creating App Runner service ai-agents-portfolio";',
+                            '  SVC=$(aws apprunner create-service --service-name ai-agents-portfolio '
+                            '    --source-configuration "$SRC_CONFIG" '
+                            '    --query Service.ServiceArn --output text);',
+                            'else ',
+                            '  echo "Waiting for existing service to become ACTIVE";',
+                            '  aws apprunner wait service-active --service-arn "$SVC";',
+                            '  echo "Updating App Runner service $SVC";',
                             '  aws apprunner update-service --service-arn "$SVC" '
-                            '    --source-configuration "$SRC_CONFIG"; '
+                            '    --source-configuration "$SRC_CONFIG";',
                             'fi',
+                            'echo "Waiting for service deployment to complete...";',
+                            'aws apprunner wait service-active --service-arn "$SVC";',
                             # output service url
-                            'aws apprunner describe-service --service-arn $(aws apprunner list-services '
-                            '  --query "ServiceSummaryList[?ServiceName==\'ai-agents-portfolio\'].ServiceArn" '
-                            '  --output text) --query Service.ServiceUrl --output text'
+                            'aws apprunner describe-service --service-arn "$SVC" '
+                            '  --query Service.ServiceUrl --output text'
                         ]
                     }
                 },
