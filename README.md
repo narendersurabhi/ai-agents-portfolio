@@ -232,3 +232,16 @@ Faiss-specific settings (optional S3 sync):
 
 If the chosen backend is unavailable or misconfigured, the build step and runtime raise an error
 rather than silently falling back to JSON, so your configuration always matches the deployed state.
+
+
+To run both the API and Streamlit UI in one container (for example on AWS App Runner):
+
+```bash
+docker build -t rag-suite .
+docker run -p 8000:8000 -p 8501:8501 \
+  -e VECTOR_BACKEND=faiss \
+  -e STREAMLIT_DOCS_DIR=/data/docs \
+  -v $(pwd)/data:/data rag-suite
+```
+
+Port 8000 serves the FastAPI endpoints, while port 8501 exposes the Streamlit workbench.
