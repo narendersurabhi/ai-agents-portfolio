@@ -155,7 +155,7 @@ class PipelineStack(Stack):
                             'print(json.dumps({'
                             '\'ImageRepository\':{\'ImageIdentifier\': os.environ[\'IMAGE\'], '
                             '\'ImageRepositoryType\':\'ECR\', '
-                            '\'ImageConfiguration\':{\'Port\':\'8080\'}}, '
+                            '\'ImageConfiguration\':{\'Port\':\'8000\'}}, '
                             '\'AuthenticationConfiguration\':{\'AccessRoleArn\': os.environ[\'ACCESS_ROLE_ARN\']}, '
                             '\'AutoDeploymentsEnabled\': True}))")',
                             # create or update
