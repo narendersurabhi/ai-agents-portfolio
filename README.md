@@ -197,6 +197,17 @@ python -m src.pipelines.build_index --src data/docs --out data/vector_index
 python -m src.app.cli ask "Summarize the docs and list key risks."
 ```
 
+
+### Streamlit workbench
+
+Run a lightweight UI for uploading documents and issuing RAG queries:
+
+```bash
+streamlit run src/app/app.py
+```
+
+Uploads are written to `data/docs/` (configurable via `STREAMLIT_DOCS_DIR`). After each ingest the app rebuilds the Faiss index and hot-swaps it via the runtime reload helper. Ensure the backend env matches your Faiss configuration (`VECTOR_BACKEND=faiss`, optional `FAISS_*` settings).
+
 ### Vector backends
 
 - `numpy` - loads `vectors.npy` for in-memory cosine search.
