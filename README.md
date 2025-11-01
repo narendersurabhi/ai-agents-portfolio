@@ -238,10 +238,12 @@ To run both the API and Streamlit UI in one container (for example on AWS App Ru
 
 ```bash
 docker build -t rag-suite .
-docker run -p 8000:8000 -p 8501:8501 \
+docker run -p 8000:8000 \
   -e VECTOR_BACKEND=faiss \
   -e STREAMLIT_DOCS_DIR=/data/docs \
   -v $(pwd)/data:/data rag-suite
 ```
 
-Port 8000 serves the FastAPI endpoints, while port 8501 exposes the Streamlit workbench.
+Nginx listens on port 8000 and proxies `/api/*` to FastAPI (running on 8001) while routing the root path
+to the Streamlit UI (running on 8501). Exposing port 8501 is optional for debugging because the proxy
+already publishes the workbench at `/`.

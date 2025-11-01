@@ -27,11 +27,17 @@ if bucket:
 PY
 fi
 
-# Start FastAPI (prefect concurrency via uvicorn) in background
-uvicorn src.app.api:app --host 0.0.0.0 --port 8000 &
+# Launch services behind nginx reverse proxy.
+cleanup() {
+  [[ -n "${STREAMLIT_PID:-}" ]] && kill "${STREAMLIT_PID}" 2>/dev/null || true
+  [[ -n "${API_PID:-}" ]] && kill "${API_PID}" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+uvicorn src.app.api:app --host 0.0.0.0 --port 8001 &
 API_PID=$!
 
-# Run Streamlit in foreground
-streamlit run src/app/app.py --server.port 8501 --server.address 0.0.0.0
+streamlit run src/app/app.py --server.port 8501 --server.address 0.0.0.0 &
+STREAMLIT_PID=$!
 
-kill $API_PID
+nginx -g "daemon off;" -c /etc/nginx/nginx.conf

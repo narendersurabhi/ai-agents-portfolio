@@ -1,12 +1,17 @@
 FROM python:3.11-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
+    && apt-get install -y --no-install-recommends build-essential nginx \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml ./
+COPY app ./app
+COPY agents ./agents
+COPY configs ./configs
+COPY schemas ./schemas
 COPY src ./src
+COPY observability.py ./observability.py
 
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir -e . \
@@ -21,6 +26,7 @@ ENV VECTOR_BACKEND=faiss \
 
 EXPOSE 8000 8501
 
+COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 

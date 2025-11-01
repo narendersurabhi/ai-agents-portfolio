@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+data
+tmp_docs_src
+tmp_docs_dst
+evals
+tests
+cdk
+buildspec.yml
+README.md
+AGENTS.md
+.env
