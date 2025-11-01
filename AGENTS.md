@@ -141,3 +141,4 @@ output_schema: schemas/explanation.json
 - Implemented SNS-backed handoff publisher, feedback handoff propagation, numbered prompts with completion signals, and extended tests/evals for guard coverage.
 - Documented end-to-end request flow with guard chain, manager orchestration, and HITL handoff diagram in README.
 - Fixed README request-flow Mermaid diagram labels to render on GitHub without parse errors.
+- Completed holistic repo code review and documented findings/recommendations in `REVIEW.md`.
