@@ -158,8 +158,15 @@ class LocalVectorStore:
 
     def reload(self) -> None:
         """Reload the backing vector index if supported."""
+        self._records = None
+        self._vectors = None
         if self._backend == "faiss":
             self._reload_faiss_index()
+        elif self._backend == "json":
+            self._ensure_records()
+        elif self._backend == "numpy":
+            self._vectors = None
+            self._ensure_numpy_vectors()
 
     def _json_search(
         self,
