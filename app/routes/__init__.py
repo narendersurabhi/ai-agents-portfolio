@@ -1,1 +1,1 @@
-__all__ = ["score", "explain", "feedback"]
+__all__ = ["score", "explain", "feedback", "rag"]

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+from pathlib import Path
 
-from app.routes import explain, feedback, score
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.routes import explain, feedback, rag, score
 from observability import Timer, configure_logging, get_metrics, log_event
 
 configure_logging()
@@ -47,6 +51,15 @@ async def observability_middleware(request: Request, call_next):  # type: ignore
 app.include_router(score.router)
 app.include_router(explain.router)
 app.include_router(feedback.router)
+app.include_router(rag.router)
+
+_WEB_ROOT = Path(__file__).resolve().parent.parent / "web"
+if _WEB_ROOT.exists():
+    app.mount("/static", StaticFiles(directory=_WEB_ROOT), name="frontend-static")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_frontend() -> FileResponse:  # pragma: no cover - static file serving
+        return FileResponse(_WEB_ROOT / "index.html")
 
 
 @app.get("/healthz")
