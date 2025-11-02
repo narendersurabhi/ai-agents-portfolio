@@ -121,7 +121,7 @@ class RetrievalAgent:
         # Allow override via env for compatibility
         self.model = model or os.getenv("CHAT_MODEL") or "gpt-4o-mini"
 
-    def _llm_answer(self, question: str, docs: List[Dict[str, Any]]) -> str:        
+    def _llm_answer(self, question: str, docs: List[Dict[str, Any]]) -> Tuple[str, Dict[str, Any]]:        
         context_blocks = []
         for idx, d in enumerate(docs, start=1):
             src = d.get("id", "")
@@ -135,6 +135,7 @@ class RetrievalAgent:
             " Cite sources as [Source N]. If insufficient context, say so."
         )
         user = f"Question: {question}\n\nContext:\n{context}"
+        raw_payload: Dict[str, Any] = {}
         try:
             if os.getenv("LLM_DEBUG"):
                 key = os.getenv("OPENAI_API_KEY") or ""
@@ -157,8 +158,9 @@ class RetrievalAgent:
                 if is_v5:
                     try:
                         parts: List[str] = []
+                        events: List[Dict[str, Any]] = []
                         with client.responses.stream(
-                            model=self.model, input=inputs, max_output_tokens=400
+                            model=self.model, input=inputs, max_output_tokens=3000
                         ) as stream:
                             for event in stream:
                                 t = getattr(event, "type", None)
@@ -170,10 +172,14 @@ class RetrievalAgent:
                                         delta = event.get("delta", delta)
                                     if delta:
                                         parts.append(str(delta))
+                                        events.append({"type": "response.output_text.delta", "delta": str(delta)})
                                 elif t in {"response.completed", "response.completed_successfully"}:
+                                    events.append({"type": "response.completed"})
                                     break
                         if parts:
-                            return "".join(parts)
+                            text_out = "".join(parts)
+                            raw_payload = {"mode": "responses_stream", "events": events, "text": text_out}
+                            return text_out, raw_payload
                     except Exception as e_stream:
                         if os.getenv("LLM_DEBUG"):
                             print(
@@ -184,7 +190,7 @@ class RetrievalAgent:
                 resp = client.responses.create(
                     model=self.model,
                     input=inputs,
-                    max_output_tokens=1200 if is_v5 else 400,
+                    max_output_tokens=3000,
                 )
                 payload = _response_to_dict(resp)
                 text = getattr(resp, "output_text", None)
@@ -195,7 +201,8 @@ class RetrievalAgent:
                     if structured is not None:
                         text = json.dumps(structured)
                 if text:
-                    return str(text)
+                    raw_payload = {"mode": "responses", "payload": payload}
+                    return str(text), raw_payload
                 if is_v5:
                     if os.getenv("LLM_DEBUG"):
                         try:
@@ -222,13 +229,17 @@ class RetrievalAgent:
             }
             # Try legacy first
             try:
-                resp = client.chat.completions.create(**{**base, "max_tokens": 400, "temperature": 0.2})
-                return resp.choices[0].message.content or ""
+                resp = client.chat.completions.create(**{**base, "max_tokens": 3000, "temperature": 0.2})
+                text = resp.choices[0].message.content or ""
+                raw_payload = {"mode": "chat_completions", "payload": _response_to_dict(resp)}
+                return text, raw_payload
             except Exception as e1:
                 if os.getenv("LLM_DEBUG"):
                     print(f"Chat legacy failed: {type(e1).__name__}: {e1}", file=sys.stderr)
-                resp = client.chat.completions.create(**{**base, "max_completion_tokens": 400})
-                return resp.choices[0].message.content or ""
+                resp = client.chat.completions.create(**{**base, "max_completion_tokens": 3000})
+                text = resp.choices[0].message.content or ""
+                raw_payload = {"mode": "chat_completions", "payload": _response_to_dict(resp)}
+                return text, raw_payload
         except Exception as e:
             if os.getenv("LLM_DEBUG"):
                 print(f"LLM call failed: {type(e).__name__}: {e}", file=sys.stderr)
@@ -283,7 +294,13 @@ class RetrievalAgent:
                 lines.append("")
                 lines.append("Sources:")
                 lines.extend([f"- [#{i+1}] {s}" for i, s in enumerate(srcs)])
-            return "\n".join(lines)
+            text_out = "\n".join(lines)
+            raw_payload = {
+                "mode": "fallback_summary",
+                "reason": f"{type(e).__name__}: {e}",
+                "used_chunks": srcs,
+            }
+            return text_out, raw_payload
 
     def _mmr(self, q_vec: List[float], cands: List[Dict[str, Any]], k: int, lam: float = 0.75) -> List[Dict[str, Any]]:
         """
@@ -325,7 +342,7 @@ class RetrievalAgent:
         )
         q_vec = embed_text(question)
         docs = self._mmr(q_vec, cands, self.top_k)
-        answer_text = self._llm_answer(question, docs)
+        answer_text, raw_payload = self._llm_answer(question, docs)
         # Prepare output: hide text/embedding in hits, dedup sources
         hits: List[Dict[str, Any]] = [
             {"id": d.get("id"), "score": d.get("score"), "chunk": d.get("chunk")}
@@ -343,5 +360,6 @@ class RetrievalAgent:
             "answer": answer_text,
             "sources": sources,
             "hits": hits,
+            "raw_response": raw_payload,
         }
         return result
