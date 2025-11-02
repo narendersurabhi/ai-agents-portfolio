@@ -46,7 +46,15 @@ def rebuild_vector_index() -> dict:
     try:
         rebuild_index()
     except subprocess.CalledProcessError as exc:  # pragma: no cover - operational path
-        raise HTTPException(status_code=500, detail=f"Index rebuild failed: {exc}") from exc
+        stderr = exc.stderr or ""
+        stdout = exc.stdout or ""
+        message = stderr.strip() or stdout.strip() or str(exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Index rebuild failed (exit {exc.returncode}): {message}",
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "ok"}
 
 
