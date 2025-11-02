@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -29,6 +29,7 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[str]
     hits: List[dict]
+    raw_response: Dict[str, Any] | None = None
 
 
 @router.post("/documents")
@@ -68,4 +69,5 @@ def run_query(payload: QueryRequest) -> QueryResponse:
         answer=result.get("answer") or "",
         sources=result.get("sources") or [],
         hits=result.get("hits") or [],
+        raw_response=result.get("raw_response") or {},
     )

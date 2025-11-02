@@ -165,8 +165,10 @@ class LocalVectorStore:
         elif self._backend == "json":
             self._ensure_records()
         elif self._backend == "numpy":
-            self._vectors = None
+            self._ensure_records()
             self._ensure_numpy_vectors()
+        else:
+            self._ensure_records()
 
     def _json_search(
         self,

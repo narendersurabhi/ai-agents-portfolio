@@ -14,7 +14,10 @@ const resultPanel = document.getElementById("result");
 const answerBlock = document.getElementById("answer");
 const sourcesBlock = document.getElementById("sources");
 const hitsBlock = document.getElementById("hits");
-const debugBlock = document.getElementById("debug");
+const rawDetails = document.getElementById("raw-response");
+const rawPre = document.getElementById("raw");
+const hitsDetails = document.getElementById("hits-debug");
+const hitsPre = document.getElementById("hits-json");
 
 const API_BASE = "/api/rag";
 
@@ -36,7 +39,7 @@ async function uploadDocuments() {
   const formData = new FormData();
   Array.from(files).forEach((file) => formData.append("files", file));
 
-  setStatus(uploadStatus, "Uploading documents…");
+  setStatus(uploadStatus, "Uploading documents...");
   uploadBtn.disabled = true;
 
   try {
@@ -63,7 +66,7 @@ async function uploadDocuments() {
 }
 
 async function rebuildIndex() {
-  setStatus(reindexStatus, "Rebuilding index…");
+  setStatus(reindexStatus, "Rebuilding index...");
   reindexBtn.disabled = true;
   try {
     const resp = await fetch(`${API_BASE}/reindex`, { method: "POST" });
@@ -82,13 +85,15 @@ async function rebuildIndex() {
 function renderResult(data) {
   if (!data) {
     resultPanel.hidden = true;
+    if (hitsDetails) hitsDetails.hidden = true;
+    if (rawDetails) rawDetails.hidden = true;
     return;
   }
 
   answerBlock.textContent = data.answer || "No answer returned.";
 
   sourcesBlock.innerHTML = "";
-  const debugList = [];
+  const hitsSummary = [];
   if (Array.isArray(data.sources) && data.sources.length) {
     const list = document.createElement("ul");
     data.sources.forEach((src) => {
@@ -111,9 +116,9 @@ function renderResult(data) {
         typeof hit.score === "number" ? hit.score.toFixed(3) : "n/a";
       const id = hit.id ?? "unknown";
       const chunk = hit.chunk ?? "n/a";
-      item.innerHTML = `<strong>${id}</strong> · chunk ${chunk} · score ${score}`;
+      item.innerHTML = `<strong>${id}</strong> - chunk ${chunk} - score ${score}`;
       list.appendChild(item);
-      debugList.push({ id, chunk, score });
+      hitsSummary.push({ id, chunk, score });
     });
     const heading = document.createElement("h4");
     heading.textContent = "Retrieved Chunks";
@@ -121,12 +126,24 @@ function renderResult(data) {
     hitsBlock.appendChild(list);
   }
 
-  if (debugBlock) {
-    if (debugList.length) {
-      debugBlock.textContent = JSON.stringify(debugList, null, 2);
-      debugBlock.parentElement.hidden = false;
+  if (hitsDetails && hitsPre) {
+    if (hitsSummary.length) {
+      hitsPre.textContent = JSON.stringify(hitsSummary, null, 2);
+      hitsDetails.hidden = false;
     } else {
-      debugBlock.parentElement.hidden = true;
+      hitsPre.textContent = "";
+      hitsDetails.hidden = true;
+    }
+  }
+
+  if (rawDetails && rawPre) {
+    const raw = data.raw_response;
+    if (raw && Object.keys(raw).length) {
+      rawPre.textContent = JSON.stringify(raw, null, 2);
+      rawDetails.hidden = false;
+    } else {
+      rawPre.textContent = "";
+      rawDetails.hidden = true;
     }
   }
 
@@ -147,7 +164,7 @@ async function runQuery() {
   }
   topkValue = Math.min(Math.max(topkValue, 1), 20);
 
-  setStatus(queryStatus, "Running retrieval…");
+  setStatus(queryStatus, "Running retrieval...");
   queryBtn.disabled = true;
 
   try {
