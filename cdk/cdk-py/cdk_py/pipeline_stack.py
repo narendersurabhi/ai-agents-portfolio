@@ -108,7 +108,10 @@ class PipelineStack(Stack):
         build_project = codebuild.PipelineProject(
             self, "Build",
             role=codebuild_role,
-            environment=codebuild.BuildEnvironment(privileged=True),
+            environment=codebuild.BuildEnvironment(
+                privileged=True,
+                build_image=codebuild.LinuxBuildImage.STANDARD_7_0,
+            ),
             build_spec=codebuild.BuildSpec.from_source_filename("buildspec.yml"),
         )
         
@@ -127,7 +130,10 @@ class PipelineStack(Stack):
         deploy_project = codebuild.PipelineProject(
             self, "Deploy",
             role=codebuild_role,
-            environment=codebuild.BuildEnvironment(privileged=False),
+            environment=codebuild.BuildEnvironment(
+                privileged=False,
+                build_image=codebuild.LinuxBuildImage.STANDARD_7_0,
+            ),
             environment_variables={
                 "ACCESS_ROLE_ARN": codebuild.BuildEnvironmentVariable(
                     value=ecr_access_role.role_arn
@@ -138,6 +144,9 @@ class PipelineStack(Stack):
                 "phases": {
                     "build": {
                         "commands": [
+                            # Ensure AWS CLI supports App Runner
+                            'aws --version',
+                            'if ! aws help 2>&1 | grep -q apprunner; then echo "Installing AWS CLI v2 (for App Runner support)"; curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip; unzip -q /tmp/awscliv2.zip -d /tmp; /tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin --update; aws --version; fi',
                             'aws sts get-caller-identity --query Arn --output text',
                             'echo "ACCESS_ROLE_ARN=${ACCESS_ROLE_ARN}"',
                             'set -eu',
