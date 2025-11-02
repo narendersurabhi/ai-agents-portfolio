@@ -14,6 +14,7 @@ const resultPanel = document.getElementById("result");
 const answerBlock = document.getElementById("answer");
 const sourcesBlock = document.getElementById("sources");
 const hitsBlock = document.getElementById("hits");
+const debugBlock = document.getElementById("debug");
 
 const API_BASE = "/api/rag";
 
@@ -87,6 +88,7 @@ function renderResult(data) {
   answerBlock.textContent = data.answer || "No answer returned.";
 
   sourcesBlock.innerHTML = "";
+  const debugList = [];
   if (Array.isArray(data.sources) && data.sources.length) {
     const list = document.createElement("ul");
     data.sources.forEach((src) => {
@@ -107,15 +109,25 @@ function renderResult(data) {
       const item = document.createElement("li");
       const score =
         typeof hit.score === "number" ? hit.score.toFixed(3) : "n/a";
-      item.innerHTML = `<strong>${hit.id ?? "unknown"}</strong> · chunk ${
-        hit.chunk ?? "n/a"
-      } · score ${score}`;
+      const id = hit.id ?? "unknown";
+      const chunk = hit.chunk ?? "n/a";
+      item.innerHTML = `<strong>${id}</strong> · chunk ${chunk} · score ${score}`;
       list.appendChild(item);
+      debugList.push({ id, chunk, score });
     });
     const heading = document.createElement("h4");
     heading.textContent = "Retrieved Chunks";
     hitsBlock.appendChild(heading);
     hitsBlock.appendChild(list);
+  }
+
+  if (debugBlock) {
+    if (debugList.length) {
+      debugBlock.textContent = JSON.stringify(debugList, null, 2);
+      debugBlock.parentElement.hidden = false;
+    } else {
+      debugBlock.parentElement.hidden = true;
+    }
   }
 
   resultPanel.hidden = false;
