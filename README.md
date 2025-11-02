@@ -4,7 +4,6 @@
 ![Pipeline](https://img.shields.io/badge/CodePipeline-active-success)
 ![Build](https://img.shields.io/badge/CodeBuild-docker-green)
 ![CI](https://github.com/narendersurabhi/ai-agents-portfolio/actions/workflows/ci.yml/badge.svg) 
-![Deploy](https://github.com/narendersurabhi/ai-agents-portfolio/actions/workflows/deploy.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 
 # AI Agents Portfolio
