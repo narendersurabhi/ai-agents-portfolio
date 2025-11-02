@@ -112,7 +112,11 @@ def _extract_structured_json(payload: Dict[str, Any]) -> Dict[str, Any] | None:
 
 class RetrievalAgent:
     def __init__(self, top_k: int = 4, model: str | None = None):
-        self.vs = LocalVectorStore("data/vector_index")
+        index_path = (
+            os.getenv("VECTOR_INDEX_DIR")
+            or "data/vector_index"
+        )
+        self.vs = LocalVectorStore(index_path)
         self.top_k = top_k
         # Allow override via env for compatibility
         self.model = model or os.getenv("CHAT_MODEL") or "gpt-4o-mini"

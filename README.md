@@ -208,7 +208,7 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 The UI lets you upload PDFs/Markdown/text files, trigger an index rebuild, and issue retrieval queries.
-Documents land in `data/docs/` (override with `STREAMLIT_DOCS_DIR`). Rebuilding invokes the same
+Documents land in `data/docs/` (override with `VECTOR_DOCS_DIR`). Rebuilding invokes the same
 embedding pipeline used in production, refreshing the configured vector backend.
 
 ### Vector backends
@@ -243,7 +243,7 @@ To run both the API and web UI in one container (for example on AWS App Runner):
 docker build -t rag-suite .
 docker run -p 8000:8000 \
   -e VECTOR_BACKEND=faiss \
-  -e STREAMLIT_DOCS_DIR=/data/docs \
+  -e VECTOR_DOCS_DIR=/data/docs \
   -v $(pwd)/data:/data rag-suite
 ```
 
