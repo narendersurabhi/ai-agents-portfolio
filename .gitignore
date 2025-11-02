@@ -60,3 +60,17 @@ cdk.context.json
 # Node (if present under CDK or tools)
 node_modules/
 
+# Node modules anywhere (nested projects)
+**/node_modules/
+
+# Web app build artifacts
+web/.next/
+web/dist/
+web/build/
+
+# Docs and reports (generated)
+tmp_docs_src/
+tmp_docs_dst/
+reports/
+artifacts/
+
