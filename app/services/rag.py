@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Sequence
@@ -48,7 +49,7 @@ async def save_documents(files: Sequence[UploadFile]) -> List[str]:
 def rebuild_index() -> None:
     _ensure_directories()
     cmd = [
-        "python",
+        sys.executable,
         "-m",
         "src.pipelines.build_index",
         "--src",
@@ -58,7 +59,7 @@ def rebuild_index() -> None:
         "--backend",
         VECTOR_BACKEND,
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, capture_output=True, text=True)
     agent = get_retrieval_agent()
     reload_fn = getattr(agent.vs, "reload", None)
     if callable(reload_fn):
