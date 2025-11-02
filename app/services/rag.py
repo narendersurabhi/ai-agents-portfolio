@@ -12,8 +12,14 @@ from fastapi import UploadFile
 from src.agents.retrieval_agent import RetrievalAgent
 
 
-DOCS_DIR = Path(os.getenv("STREAMLIT_DOCS_DIR", "data/docs"))
-INDEX_DIR = Path(os.getenv("STREAMLIT_INDEX_DIR", "data/vector_index"))
+DOCS_DIR = Path(
+    os.getenv("VECTOR_DOCS_DIR")
+    or "data/docs"
+)
+INDEX_DIR = Path(
+    os.getenv("VECTOR_INDEX_DIR")
+    or "data/vector_index"
+)
 VECTOR_BACKEND = os.getenv("VECTOR_BACKEND", "faiss")
 
 
