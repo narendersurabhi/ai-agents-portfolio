@@ -159,18 +159,7 @@ class PipelineStack(Stack):
                             '\'AuthenticationConfiguration\':{\'AccessRoleArn\': os.environ[\'ACCESS_ROLE_ARN\']}, '
                             '\'AutoDeploymentsEnabled\': True}))")',
                             # create or update
-                            'if [ -z "$SVC" ] || [ "$SVC" = "None" ]; then ',
-                            '  echo "Creating App Runner service ai-agents-portfolio";',
-                            '  SVC=$(aws apprunner create-service --service-name ai-agents-portfolio '
-                            '    --source-configuration "$SRC_CONFIG" '
-                            '    --query Service.ServiceArn --output text);',
-                            'else ',
-                            '  echo "Waiting for existing service to become ACTIVE";',
-                            '  aws apprunner wait service-active --service-arn "$SVC";',
-                            '  echo "Updating App Runner service $SVC";',
-                            '  aws apprunner update-service --service-arn "$SVC" '
-                            '    --source-configuration "$SRC_CONFIG";',
-                            'fi',
+                            'if [ -z "$SVC" ] || [ "$SVC" = "None" ]; then echo "Creating App Runner service ai-agents-portfolio"; SVC=$(aws apprunner create-service --service-name ai-agents-portfolio --source-configuration "$SRC_CONFIG" --query Service.ServiceArn --output text); else echo "Waiting for existing service to become ACTIVE"; aws apprunner wait service-active --service-arn "$SVC"; echo "Updating App Runner service $SVC"; aws apprunner update-service --service-arn "$SVC" --source-configuration "$SRC_CONFIG"; fi',
                             'echo "Waiting for service deployment to complete...";',
                             'aws apprunner wait service-active --service-arn "$SVC";',
                             # output service url
