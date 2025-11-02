@@ -155,21 +155,16 @@ class PipelineStack(Stack):
                             'print(json.dumps({'
                             '\'ImageRepository\':{\'ImageIdentifier\': os.environ[\'IMAGE\'], '
                             '\'ImageRepositoryType\':\'ECR\', '
-                            '\'ImageConfiguration\':{\'Port\':\'8080\'}}, '
+                            '\'ImageConfiguration\':{\'Port\':\'8000\'}}, '
                             '\'AuthenticationConfiguration\':{\'AccessRoleArn\': os.environ[\'ACCESS_ROLE_ARN\']}, '
                             '\'AutoDeploymentsEnabled\': True}))")',
                             # create or update
-                            'if [ -z "$SVC" ]; then '
-                            '  aws apprunner create-service --service-name ai-agents-portfolio '
-                            '    --source-configuration "$SRC_CONFIG"; '
-                            'else '
-                            '  aws apprunner update-service --service-arn "$SVC" '
-                            '    --source-configuration "$SRC_CONFIG"; '
-                            'fi',
+                            "if [ -z \"$SVC\" ] || [ \"$SVC\" = \"None\" ]; then echo \"Creating App Runner service ai-agents-portfolio\"; SVC=$(aws apprunner create-service --service-name ai-agents-portfolio --source-configuration \"$SRC_CONFIG\" --query Service.ServiceArn --output text); else echo \"Waiting for existing service to become READY\"; while true; do status=$(aws apprunner describe-service --service-arn \"$SVC\" --query Service.Status --output text); echo \"pre-update status=$status\"; case \"$status\" in RUNNING) break ;; OPERATION_IN_PROGRESS|OPERATION_PENDING|PENDING|DEPLOYING) sleep 10 ;; *) echo \"Service status $status prevents update\"; exit 1 ;; esac; done; echo \"Updating App Runner service $SVC\"; aws apprunner update-service --service-arn \"$SVC\" --source-configuration \"$SRC_CONFIG\"; fi"
+                            # 'echo "Waiting for service deployment to complete...";',
+                            # "while true; do status=$(aws apprunner describe-service --service-arn \"$SVC\" --query Service.Status --output text); echo \"status=$status\"; case \"$status\" in RUNNING) break ;; OPERATION_IN_PROGRESS|OPERATION_PENDING|PENDING|DEPLOYING) sleep 10 ;; *) echo \"Service entered status $status\"; exit 1 ;; esac; done",
                             # output service url
-                            'aws apprunner describe-service --service-arn $(aws apprunner list-services '
-                            '  --query "ServiceSummaryList[?ServiceName==\'ai-agents-portfolio\'].ServiceArn" '
-                            '  --output text) --query Service.ServiceUrl --output text'
+                            # 'aws apprunner describe-service --service-arn "$SVC" '
+                            # '  --query Service.ServiceUrl --output text'
                         ]
                     }
                 },
