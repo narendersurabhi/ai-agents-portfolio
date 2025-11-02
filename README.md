@@ -198,15 +198,18 @@ python -m src.app.cli ask "Summarize the docs and list key risks."
 ```
 
 
-### Streamlit workbench
+### RAG web workbench
 
-Run a lightweight UI for uploading documents and issuing RAG queries:
+The container now ships a static HTML/JS front-end (no WebSockets required). Launch the FastAPI
+runtime locally and open the root URL to manage documents and run retrieval:
 
 ```bash
-streamlit run src/app/app.py
+uvicorn app.main:app --reload --port 8000
 ```
 
-Uploads are written to `data/docs/` (configurable via `STREAMLIT_DOCS_DIR`). After each ingest the app rebuilds the Faiss index and hot-swaps it via the runtime reload helper. Ensure the backend env matches your Faiss configuration (`VECTOR_BACKEND=faiss`, optional `FAISS_*` settings).
+The UI lets you upload PDFs/Markdown/text files, trigger an index rebuild, and issue retrieval queries.
+Documents land in `data/docs/` (override with `STREAMLIT_DOCS_DIR`). Rebuilding invokes the same
+embedding pipeline used in production, refreshing the configured vector backend.
 
 ### Vector backends
 
@@ -234,7 +237,7 @@ If the chosen backend is unavailable or misconfigured, the build step and runtim
 rather than silently falling back to JSON, so your configuration always matches the deployed state.
 
 
-To run both the API and Streamlit UI in one container (for example on AWS App Runner):
+To run both the API and web UI in one container (for example on AWS App Runner):
 
 ```bash
 docker build -t rag-suite .
@@ -244,6 +247,5 @@ docker run -p 8000:8000 \
   -v $(pwd)/data:/data rag-suite
 ```
 
-Nginx listens on port 8000 and proxies `/api/*` to FastAPI (running on 8001) while routing the root path
-to the Streamlit UI (running on 8501). Exposing port 8501 is optional for debugging because the proxy
-already publishes the workbench at `/`.
+Port 8000 serves the FastAPI endpoints under `/score`, `/explain`, `/feedback`, and `/api/rag/*`.
+The root path (`/`) serves the static workbench.

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    />
+    <title>RAG Workbench</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Retrieval Workbench</h1>
+      <p class="tagline">
+        Upload documents, rebuild the vector index, and run grounded Q&amp;A using the REST API.
+      </p>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>1. Upload Documents</h2>
+        <p>Select PDF, Markdown, or text files to add to the knowledge base.</p>
+        <input id="file-input" type="file" accept=".pdf,.md,.markdown,.txt" multiple />
+        <button id="upload-btn">Upload</button>
+        <p id="upload-status" class="status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>2. Rebuild Index</h2>
+        <p>Re-embed all documents and refresh the FAISS/Vector store after new uploads.</p>
+        <button id="reindex-btn">Rebuild Index</button>
+        <p id="reindex-status" class="status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>3. Ask a Question</h2>
+        <label for="question-input" class="sr-only">Question</label>
+        <textarea
+          id="question-input"
+          placeholder="Enter your question..."
+          rows="3"
+        ></textarea>
+        <div class="controls">
+          <label for="topk-input">Top-K:</label>
+          <input id="topk-input" type="number" min="1" max="20" value="4" />
+          <button id="query-btn">Run Retrieval</button>
+        </div>
+        <p id="query-status" class="status"></p>
+        <article id="result" hidden>
+          <h3>Answer</h3>
+          <p id="answer"></p>
+          <div id="sources"></div>
+          <div id="hits"></div>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <small>Powered by FastAPI + schema-first agents.</small>
+    </footer>
+
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
