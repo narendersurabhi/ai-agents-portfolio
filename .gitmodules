@@ -1,0 +1,3 @@
+[submodule "mcp-a2a-framework"]
+	path = mcp-a2a-framework
+	url = https://github.com/narendersurabhi/mcp-a2a-framework.git
